@@ -1334,35 +1334,9 @@ if player.Character then
 end
 
 -----------------------------------------------------
--- CLIENT-SIDE PET ANIMATION ENGINE (Issue 16 Fix)
+-- CLIENT-SIDE PET ANIMATION (Handled by PetShowcaseAnimator)
 -----------------------------------------------------
--- Offloads all pet bobbing & roaming to local client; zero server network replication!
-task.spawn(function()
-    local t = 0
-    while true do
-        t = t + 0.04
-        local bases = Workspace:FindFirstChild("EggSanctuaryMap") and Workspace.EggSanctuaryMap:FindFirstChild("MultiplayerBases")
-        if bases then
-            for _, plot in ipairs(bases:GetChildren()) do
-                local petsFolder = plot:FindFirstChild("PetsInGarden")
-                if petsFolder then
-                    for _, petModel in ipairs(petsFolder:GetChildren()) do
-                        if petModel:IsA("Model") and petModel:GetAttribute("IsGardenPet") then
-                            local baseCF = petModel:GetAttribute("BaseCFrame")
-                            if baseCF then
-                                local petSeed = (petModel.Name:byte(5) or 1) * 0.7
-                                local bob = math.sin(t * 2.2 + petSeed) * 0.35
-                                local roamX = math.sin(t * 0.7 + petSeed) * 1.2
-                                local roamZ = math.cos(t * 0.7 + petSeed) * 1.2
-                                petModel:PivotTo(baseCF * CFrame.new(roamX, bob, roamZ) * CFrame.Angles(0, math.sin(t * 0.9 + petSeed) * 0.25, 0))
-                            end
-                        end
-                    end
-                end
-            end
-        end
-        task.wait(0.04)
-    end
-end)
+-- Living breathing, roaming, multi-tail wave sway & ambient station motion
+-- are powered at 60 FPS by PetShowcaseAnimator!
 
 print("[EggSanctuary] Client v8.0 Fully Hardened & Audited Engine Loaded!")

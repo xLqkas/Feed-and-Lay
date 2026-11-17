@@ -14,6 +14,9 @@
       "StarterPlayerScripts": {
         "EggSanctuaryClient": {
           "$path": "src/client/EggSanctuaryClient.client.luau"
+        },
+        "PetShowcaseAnimator": {
+          "$path": "src/client/PetShowcaseAnimator.client.luau"
         }
       }
     },

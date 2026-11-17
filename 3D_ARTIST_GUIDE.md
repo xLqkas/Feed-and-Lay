@@ -44,13 +44,22 @@ Models should be UV-mapped to support material tinting or skin variations:
 
 ### B. Base Interactive Machines
 Beside each garden fence, three machines must be modeled:
-1. **Egg Washer (Egg Cleaner):**
-   - A wooden/stone wash basin with running water or soap bubbles.
-   - Center pedestal where dirty eggs rest during cleaning.
-2. **Workout Treadmill (Gym):**
-   - High-energy stylized treadmill or lifting bench with an animated belt surface or glowing power gauge (`+10 Reach / Step`).
+1. **Egg Cleaner (Wash Station):**
+   - High-grade marble/stone wash basin with dual swan-neck brass faucets, shimmering water pool, and soap bubble particle emitters.
+   - Washing bucket, sponge, and mud/sludge splash VFX (when eggs arrive from launch).
+2. **Bicep Curl Station (Workout Gym):**
+   - Red leather upholstered preacher bench with angled arm pad and seat.
+   - Heavy tubular steel frame, EZ-curl bar with Olympic bumper plates, dual side dumbbell racks, and gym chalk bucket with puff particles.
+   - Fully automated workout system: when triggered, players sit, hold dual dumbbells, and perform smooth procedural bicep curls earning `+10 Reach` per repetition.
 3. **Chef Stall (Kitchen / Food Shop):**
-   - Wooden market stall with a striped awning (red/white or blue/yellow), display counter, and food crates.
+   - Stylized wooden market stall with a red/yellow striped canvas awning.
+   - Display counter with wooden food crates showcasing 3D gourmet food props (Red Apple, Golden Honey Jar, Dragon Fruit, etc.) and a hanging warm brass lantern.
+
+### C. Garden Yard Details (Multiplayer Base Plot)
+- **Cobblestone Stepping Path:** Staggered weathered stone pavers leading from the entrance gate to the center of the garden.
+- **3D Flower Beds:** Clusters of colorful pasture flowers (sun-yellow, lavender-violet, petal-red, sky-blue) embedded in the lush grass.
+- **Timber Corner Lantern Posts:** 4 rustic timber corner posts topped with brass carriage lamps and warm amber PointLights.
+- **Golden Reward Chest:** Ornate wooden chest bound with gilded brass bands and a radiant golden shimmer aura (`Sparkles`).
 
 ### C. Distance Canyon & Launch Runway
 - **Launch Station:**
@@ -71,11 +80,22 @@ Beside each garden fence, three machines must be modeled:
 - Default Roblox avatar height is **5.0 studs**.
 - All models must be scaled proportionally against a standard R15/R6 character rig.
 
-### Hierarchy & Pivot Points
+### Hierarchy, Pivot Points & Procedural Animation Rigging
 - **PrimaryPart:** Every model **must** designate a single central root part named `Body` or `Chest`.
 - **Pivot:** The pivot point must be at the bottom center of the creature (at ground level `Y = 0`) so `:PivotTo()` places it flush with the ground.
 - **Facing Direction:** Models must face towards **$-Z$** (or $+Z$) in Blender so they face forward upon import.
-- **Collision:** All parts will have `CanCollide = false` applied by game code.
+- **Collision:** All sub-parts should have `CanCollide = false, Massless = true`.
+- **Weld Constraints:** In Studio, all sub-parts are welded to `Body` using `WeldConstraint`.
+
+#### Automatic Procedural Animation Engine (`PetShowcaseAnimator`)
+Our client engine runs a 60 FPS procedural animation system on all pets in garden plots. If parts follow these naming conventions, they automatically receive organic alive motion with zero animation tracks required:
+- `Ear_L` / `Ear_R`: Floppy ear breathing sway and random ear twitches.
+- `Tail`: Fluffy wagging and idle swishing.
+- `Tail_1` through `Tail_9`: Sinuous multi-tail wave sway (tail fanning and wave propagation).
+- `Wing_L` / `Wing_R`: Gentle hovering flutter.
+- `Head_L` / `Head_R`: Independent lateral head breathing and scanning for multi-headed beasts (e.g. Ember Hound).
+- `Crest_1` through `Crest_5`: Wave crest ripple down the spine (e.g. Coral Leviathan / Slime Drake).
+- `EggModel`: Smooth hovering and 360-degree orbital rotation over incubators.
 
 ### Polycount Budget
 - Pets: **< 4,000 triangles** per creature.

@@ -3,8 +3,7 @@ import sys
 import subprocess
 import shutil
 
-OUTPUT_DIR = r"C:\Users\USER\.gemini\antigravity\scratch\EggSanctuary"
-ARTIFACT_DIR = r"C:\Users\USER\.gemini\antigravity\brain\27b361aa-9075-45ad-b1bd-ebf27a9169a0"
+OUTPUT_DIR = os.path.dirname(os.path.abspath(__file__))
 EDGE_PATH = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -689,7 +688,6 @@ html_content = """<!DOCTYPE html>
 
 html_path = os.path.join(OUTPUT_DIR, "Egg_Sanctuary_Clean_and_Hatch_GDD.html")
 pdf_path = os.path.join(OUTPUT_DIR, "Egg_Sanctuary_Clean_and_Hatch_GDD.pdf")
-artifact_pdf_path = os.path.join(ARTIFACT_DIR, "Egg_Sanctuary_Clean_and_Hatch_GDD.pdf")
 
 print("Writing updated GDD v2.1 HTML specification (Food Luck Engine)...")
 with open(html_path, "w", encoding="utf-8") as f:
@@ -711,7 +709,5 @@ cmd = [
 res = subprocess.run(cmd, capture_output=True, text=True)
 if res.returncode == 0 and os.path.exists(pdf_path):
     print(f"✓ Updated PDF v2.1 successfully compiled: {pdf_path}")
-    shutil.copyfile(pdf_path, artifact_pdf_path)
-    print(f"✓ PDF copied to artifact directory: {artifact_pdf_path}")
 else:
     print(f"Error compiling PDF: {res.stderr}")

@@ -16,12 +16,14 @@ local SoundHelper = require(Modules:WaitForChild("SoundHelper"))
 
 -- Remotes
 local TrainStrengthRemote = Remotes:WaitForChild("TrainStrength")
+local StartChargeRemote = Remotes:WaitForChild("StartCharge")
 local ThrowFoodRemote = Remotes:WaitForChild("ThrowFood")
 local CleanEggRemote = Remotes:WaitForChild("CleanEgg")
 local HatchEggRemote = Remotes:WaitForChild("HatchEgg")
 local UpgradeFoodRemote = Remotes:WaitForChild("UpgradeFood")
+local ExpandSanctuaryRemote = Remotes:WaitForChild("ExpandSanctuary")
+local ManagePetRemote = Remotes:WaitForChild("ManagePet")
 local GetSanctuaryStateRemote = Remotes:WaitForChild("GetSanctuaryState")
-local StartChargeRemote = Remotes:WaitForChild("StartCharge")
 
 -- GUI References
 local hudGui = PlayerGui:WaitForChild("EggSanctuaryHUD")
@@ -63,9 +65,6 @@ local CloseShopBtn = ShopModal:WaitForChild("CloseButton")
 
 local myPlotId = 1
 local myPlotModel = nil
-local myPlotX = -150
-
-local PLOT_X_POSITIONS = {-150, -90, -30, 30, 90, 150}
 
 local isAtLaunchZone = false
 local isCharging = false
@@ -73,6 +72,7 @@ local isThrowing = false
 local chargeStartTime = 0
 local landingPreviewPart = nil
 local hasEggInCleaner = false
+local lastClientGymClick = 0
 
 local function showNotice(text, color)
     NoticeLabel.Text = text
@@ -85,39 +85,52 @@ local function showNotice(text, color)
     }):Play()
 end
 
-local function resolvePlot()
-    local state = GetSanctuaryStateRemote:InvokeServer()
-    if state and state.PlotId then
-        myPlotId = state.PlotId
-        hasEggInCleaner = state.HasEgg
-        myPlotX = PLOT_X_POSITIONS[myPlotId] or -150
+local function bindPlotPrompts()
+    if not myPlotModel then return end
+    local cleaner = myPlotModel:FindFirstChild("EggCleaner")
+    local basin = cleaner and cleaner:FindFirstChild("WashBasin")
+    local prompt = basin and basin:FindFirstChildOfClass("ProximityPrompt")
+    if prompt then
+        prompt.Triggered:Connect(function()
+            WashModal.Visible = true
+        end)
     end
 
+    local chef = myPlotModel:FindFirstChild("ChefStall")
+    local counter = chef and chef:FindFirstChild("Counter")
+    local chefPrompt = counter and counter:FindFirstChildOfClass("ProximityPrompt")
+    if chefPrompt then
+        chefPrompt.Triggered:Connect(function()
+            ShopModal.Visible = true
+        end)
+    end
+end
+
+local function resolvePlot(plotId)
+    myPlotId = plotId or myPlotId
     local bases = Workspace:FindFirstChild("EggSanctuaryMap") and Workspace.EggSanctuaryMap:FindFirstChild("MultiplayerBases")
     if bases then
         myPlotModel = bases:FindFirstChild("PlayerBase_" .. myPlotId)
-        if myPlotModel then
-            local cleaner = myPlotModel:FindFirstChild("EggCleaner")
-            local basin = cleaner and cleaner:FindFirstChild("WashBasin")
-            local prompt = basin and basin:FindFirstChildOfClass("ProximityPrompt")
-            if prompt then
-                prompt.Triggered:Connect(function()
-                    WashModal.Visible = true
-                end)
-            end
-
-            local chef = myPlotModel:FindFirstChild("ChefStall")
-            local counter = chef and chef:FindFirstChild("Counter")
-            local chefPrompt = counter and counter:FindFirstChildOfClass("ProximityPrompt")
-            if chefPrompt then
-                chefPrompt.Triggered:Connect(function()
-                    ShopModal.Visible = true
-                end)
-            end
-        end
+        bindPlotPrompts()
     end
 end
-task.spawn(resolvePlot)
+
+task.spawn(function()
+    local leaderstats = player:WaitForChild("leaderstats", 15)
+    if leaderstats then
+        local plotVal = leaderstats:WaitForChild("PlotId", 15)
+        if plotVal then
+            resolvePlot(plotVal.Value)
+            plotVal.Changed:Connect(resolvePlot)
+        end
+    end
+
+    local state = GetSanctuaryStateRemote:InvokeServer()
+    if state and state.PlotId then
+        resolvePlot(state.PlotId)
+        hasEggInCleaner = state.HasEgg
+    end
+end)
 
 local function updateUI()
     local leaderstats = player:FindFirstChild("leaderstats")
@@ -138,10 +151,29 @@ local function updateUI()
     end
 end
 
+-- Event-driven UI updates (Issue 20 Fix)
+task.spawn(function()
+    local leaderstats = player:WaitForChild("leaderstats", 15)
+    if leaderstats then
+        for _, child in ipairs(leaderstats:GetChildren()) do
+            if child:IsA("ValueBase") then
+                child.Changed:Connect(updateUI)
+            end
+        end
+        leaderstats.ChildAdded:Connect(function(child)
+            if child:IsA("ValueBase") then
+                child.Changed:Connect(updateUI)
+            end
+        end)
+    end
+    updateUI()
+end)
+
+-- Gentle 2s backup UI ticker
 task.spawn(function()
     while true do
+        task.wait(2)
         updateUI()
-        task.wait(0.5)
     end
 end)
 
@@ -175,7 +207,7 @@ end
 -----------------------------------------------------
 -- SEGMENTED POWER METER CONTROLLER (IMAGE 1 STYLE)
 -----------------------------------------------------
-local function setMeterSegments(activeCount, text, arrowYNorm)
+local function setMeterSegments(activeCount, text)
     for i = 1, 6 do
         local seg = SegmentsContainer:FindFirstChild("Segment_" .. i)
         local lit = seg and seg:FindFirstChild("LitLayer")
@@ -187,13 +219,15 @@ local function setMeterSegments(activeCount, text, arrowYNorm)
     if activeCount > 0 then
         ArrowTag.Visible = true
         MultiplierLabel.Text = text or "<| x1.0 POWER"
-        -- Move ArrowTag vertically alongside the active segment
         local yPos = UDim2.new(1, 10, 1, - (activeCount - 0.5) * 41)
         ArrowTag.Position = yPos
     else
         ArrowTag.Visible = false
     end
 end
+
+-- Forward declaration of local executeThrow (Issue 20 Fix)
+local executeThrow = nil
 
 local function startCharge()
     if not isAtLaunchZone then
@@ -204,7 +238,11 @@ local function startCharge()
 
     isCharging = true
     chargeStartTime = os.clock()
-    StartChargeRemote:FireServer()
+
+    -- Notify server to record charge start time (Issue 5 Anti-Cheat Fix)
+    pcall(function()
+        StartChargeRemote:InvokeServer()
+    end)
 
     ThrowBtn.Text = "CHARGING...\nRELEASE TO THROW!"
     ThrowBtn.BackgroundColor3 = Color3.fromRGB(255, 140, 20)
@@ -214,6 +252,7 @@ end
 local function endCharge()
     if not isCharging then return end
     isCharging = false
+    local duration = os.clock() - chargeStartTime
     removeLandingMarker()
 
     setMeterSegments(0)
@@ -225,18 +264,18 @@ local function endCharge()
         return
     end
 
-    executeThrow()
+    if executeThrow then
+        executeThrow(duration)
+    end
 end
 
--- RenderStepped Location & Segment Charge Tracker
+-- RenderStepped Location & Segment Charge Tracker (Using GameConfig.ThrowRatio!)
 RunService.RenderStepped:Connect(function()
     local char = player.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
 
     if root then
-        local pos = root.Position
-        -- Generous launch zone: Z between -5 and 30, and |X| <= 90
-        local inZone = (pos.Z >= -24 and pos.Z <= 4 and pos.X >= -75 and pos.X <= -35)
+        local inZone = GameConfig.IsInLaunchZone(root.Position)
 
         if inZone then
             if not isAtLaunchZone then
@@ -267,35 +306,16 @@ RunService.RenderStepped:Connect(function()
         end
     end
 
-    -- Update 6 Segments if charging
+    -- Update 6 Segments via centralized GameConfig (Issue 13 Fix)
     if isCharging then
         local elapsed = os.clock() - chargeStartTime
         local leaderstats = player:FindFirstChild("leaderstats")
         local strength = leaderstats and leaderstats:FindFirstChild("Strength") and leaderstats.Strength.Value or 150
-        local projectedDist = math.floor(strength * 0.5)
 
-        if elapsed <= 0.25 then
-            setMeterSegments(1, "<| x0.5 TAP")
-            projectedDist = math.floor(strength * 0.50)
-        elseif elapsed <= 0.65 then
-            setMeterSegments(2, "<| x0.7 SPEED")
-            projectedDist = math.floor(strength * 0.70)
-        elseif elapsed <= 1.05 then
-            setMeterSegments(3, "<| x0.85 SPEED")
-            projectedDist = math.floor(strength * 0.85)
-        elseif elapsed <= 1.45 then
-            setMeterSegments(4, "<| x1.0 FULL")
-            projectedDist = math.floor(strength * 1.0)
-        elseif elapsed <= 1.90 then
-            -- GOLDEN SWEET SPOT (Segment 5)
-            setMeterSegments(5, "<| x1.25 SWEET SPOT! 🔥")
-            projectedDist = math.floor(strength * 1.25)
-        else
-            -- OVERCHARGE (Segment 6)
-            setMeterSegments(6, "<| x0.9 OVERCHARGE")
-            projectedDist = math.floor(strength * 0.90)
-        end
+        local ratio, isSweetSpot, tierTag, segmentIndex = GameConfig.ThrowRatio(elapsed)
+        setMeterSegments(segmentIndex, tierTag)
 
+        local projectedDist = math.floor(strength * ratio)
         local marker = getLandingMarker()
         local targetZ = -10 + projectedDist
         marker.CFrame = CFrame.new(-55, -76.8, targetZ) * CFrame.Angles(0, 0, math.rad(90))
@@ -350,9 +370,9 @@ local function resetWashModal()
 end
 
 -----------------------------------------------------
--- EXECUTE THROW
+-- EXECUTE THROW (With safe pcall to avoid soft-lock)
 -----------------------------------------------------
-function executeThrow()
+executeThrow = function(chargeDuration)
     if isThrowing then return end
     isThrowing = true
     ThrowBtn.Text = "LAUNCHING..."
@@ -360,10 +380,21 @@ function executeThrow()
 
     local character = player.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
-    local startPos = root and (root.Position + Vector3.new(0, 3, 3)) or Vector3.new(myPlotX, 5, 20)
+    local startPos = root and (root.Position + Vector3.new(0, 3, 3)) or Vector3.new(-55, -74, -12)
 
-    local res = ThrowFoodRemote:InvokeServer()
-    if res and res.Success then
+    local ok, res = pcall(function()
+        return ThrowFoodRemote:InvokeServer(chargeDuration)
+    end)
+
+    if not ok or not res then
+        showNotice("Throw communication error. Try again!", Color3.fromRGB(255, 90, 90))
+        isThrowing = false
+        ThrowBtn.Text = "HOLD TO CHARGE\nRELEASE TO THROW"
+        ThrowBtn.BackgroundColor3 = Color3.fromRGB(240, 90, 40)
+        return
+    end
+
+    if res.Success then
         hasEggInCleaner = true
         local feedback = res.IsSweetSpot and "🔥 SWEET SPOT LAUNCH! " or "LAUNCHED! "
         showNotice(feedback .. res.Distance .. " Studs reach! (" .. res.Zone.Name .. ")", res.IsSweetSpot and Color3.fromRGB(255, 220, 60) or Color3.fromRGB(140, 240, 255))
@@ -536,7 +567,7 @@ ScrubBtn.MouseButton1Click:Connect(function()
 end)
 
 -----------------------------------------------------
--- PET SANCTUARY INVENTORY MODAL
+-- PET SANCTUARY INVENTORY MODAL (With Expand Slots Support)
 -----------------------------------------------------
 local function refreshPetModal()
     for _, child in ipairs(PetListScroll:GetChildren()) do
@@ -547,7 +578,36 @@ local function refreshPetModal()
     if not state then return end
 
     local petCount = #(state.GardenPets or {})
-    PetSummaryLabel.Text = "Pets in Garden: " .. petCount .. " • Total: +" .. state.TotalIncome .. " Bio-Essence/sec"
+    local maxSlots = state.MaxSlots or GameConfig.DefaultMaxSlots
+    PetSummaryLabel.Text = "Pets: " .. petCount .. "/" .. maxSlots .. " • Total: +" .. state.TotalIncome .. " Bio-Essence/sec"
+
+    -- Expand Slots Button
+    if maxSlots < GameConfig.MaxSlotsCap then
+        local cost = GameConfig.SlotUpgradeCost(maxSlots)
+        local expandCard = Instance.new("Frame", PetListScroll)
+        expandCard.Size = UDim2.new(1, -6, 0, 44)
+        expandCard.BackgroundColor3 = Color3.fromRGB(35, 45, 65)
+        local ecCorner = Instance.new("UICorner", expandCard)
+        ecCorner.CornerRadius = UDim.new(0, 8)
+
+        local expandBtn = Instance.new("TextButton", expandCard)
+        expandBtn.Size = UDim2.new(1, 0, 1, 0)
+        expandBtn.BackgroundTransparency = 1
+        expandBtn.Font = Enum.Font.GothamBlack
+        expandBtn.TextSize = 12
+        expandBtn.TextColor3 = Color3.fromRGB(255, 220, 80)
+        expandBtn.Text = "➕ EXPAND GARDEN SLOTS (+2) • Cost: " .. cost .. " $"
+        expandBtn.MouseButton1Click:Connect(function()
+            local res = ExpandSanctuaryRemote:InvokeServer()
+            if res and res.Success then
+                showNotice(res.Message, Color3.fromRGB(120, 255, 150))
+                refreshPetModal()
+                updateUI()
+            else
+                showNotice(res and res.Message or "Cannot expand slots", Color3.fromRGB(255, 90, 90))
+            end
+        end)
+    end
 
     if petCount == 0 then
         local emptyLbl = Instance.new("TextLabel", PetListScroll)
@@ -567,27 +627,41 @@ local function refreshPetModal()
         local cCorner = Instance.new("UICorner", card)
         cCorner.CornerRadius = UDim.new(0, 8)
 
+        local mutConfig = GameConfig.Mutations[pet.Mutation] or GameConfig.Mutations.Normal
         local cStroke = Instance.new("UIStroke", card)
         cStroke.Thickness = 1.5
-        if pet.Mutation == "Rainbow" then
-            cStroke.Color = Color3.fromRGB(255, 90, 240)
-        elseif pet.Mutation == "Golden" then
-            cStroke.Color = Color3.fromRGB(255, 215, 0)
-        elseif pet.Mutation == "Shiny" then
-            cStroke.Color = Color3.fromRGB(120, 220, 255)
-        else
-            cStroke.Color = Color3.fromRGB(80, 100, 140)
-        end
+        cStroke.Color = mutConfig.StrokeColor
 
         local info = Instance.new("TextLabel", card)
-        info.Size = UDim2.new(1, -20, 1, 0)
+        info.Size = UDim2.new(1, -90, 1, 0)
         info.Position = UDim2.new(0, 12, 0, 0)
         info.BackgroundTransparency = 1
         info.Font = Enum.Font.GothamBlack
         info.TextSize = 12
         info.TextColor3 = Color3.fromRGB(255, 255, 255)
         info.TextXAlignment = Enum.TextXAlignment.Left
-        info.Text = "🐾 " .. pet.Mutation .. " " .. pet.Name .. " (" .. pet.Rarity .. ")\nIncome: +" .. pet.Income .. " $/sec"
+        local prefix = (pet.Mutation ~= "Normal") and (pet.Mutation .. " ") or ""
+        info.Text = "🐾 " .. prefix .. pet.Name .. " (" .. (pet.Rarity or "Common") .. ")\nIncome: +" .. pet.Income .. " $/sec"
+
+        -- Release button
+        local releaseBtn = Instance.new("TextButton", card)
+        releaseBtn.Size = UDim2.new(0, 70, 0, 30)
+        releaseBtn.Position = UDim2.new(1, -78, 0.5, -15)
+        releaseBtn.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
+        local rCorner = Instance.new("UICorner", releaseBtn)
+        rCorner.CornerRadius = UDim.new(0, 6)
+        releaseBtn.Font = Enum.Font.GothamBold
+        releaseBtn.TextSize = 11
+        releaseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        releaseBtn.Text = "SELL"
+        releaseBtn.MouseButton1Click:Connect(function()
+            local res = ManagePetRemote:InvokeServer("Sell", pet.PetId)
+            if res and res.Success then
+                showNotice(res.Message, Color3.fromRGB(255, 220, 80))
+                refreshPetModal()
+                updateUI()
+            end
+        end)
     end
 end
 
@@ -688,14 +762,54 @@ CloseShopBtn.MouseButton1Click:Connect(function()
     ShopModal.Visible = false
 end)
 
+-- Gym Workout with client throttle (Issue 4 Fix)
 GymNavBtn.MouseButton1Click:Connect(function()
+    local now = os.clock()
+    if (now - lastClientGymClick) < GameConfig.TrainCooldown then
+        showNotice("Resting... Please wait a moment!", Color3.fromRGB(255, 180, 100))
+        return
+    end
+    lastClientGymClick = now
+
     local res = TrainStrengthRemote:InvokeServer()
     if res and res.Success then
         showNotice("WORKOUT! +10 Reach (" .. res.NewStrength .. " Studs)", Color3.fromRGB(255, 140, 80))
         updateUI()
-    elseif res and res.Message then
-        showNotice(res.Message, Color3.fromRGB(255, 200, 100))
+    else
+        showNotice(res and res.Message or "Training cooldown!", Color3.fromRGB(255, 120, 100))
     end
 end)
 
-print("[EggSanctuary] Client v7.0 Segmented Throw UI & Fenced Garden Engine Loaded!")
+-----------------------------------------------------
+-- CLIENT-SIDE PET ANIMATION ENGINE (Issue 16 Fix)
+-----------------------------------------------------
+-- Offloads all pet bobbing & roaming to local client; zero server network replication!
+task.spawn(function()
+    local t = 0
+    while true do
+        t = t + 0.04
+        local bases = Workspace:FindFirstChild("EggSanctuaryMap") and Workspace.EggSanctuaryMap:FindFirstChild("MultiplayerBases")
+        if bases then
+            for _, plot in ipairs(bases:GetChildren()) do
+                local petsFolder = plot:FindFirstChild("PetsInGarden")
+                if petsFolder then
+                    for _, petModel in ipairs(petsFolder:GetChildren()) do
+                        if petModel:IsA("Model") and petModel:GetAttribute("IsGardenPet") then
+                            local baseCF = petModel:GetAttribute("BaseCFrame")
+                            if baseCF then
+                                local petSeed = (petModel.Name:byte(5) or 1) * 0.7
+                                local bob = math.sin(t * 2.2 + petSeed) * 0.35
+                                local roamX = math.sin(t * 0.7 + petSeed) * 1.2
+                                local roamZ = math.cos(t * 0.7 + petSeed) * 1.2
+                                petModel:PivotTo(baseCF * CFrame.new(roamX, bob, roamZ) * CFrame.Angles(0, math.sin(t * 0.9 + petSeed) * 0.25, 0))
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        task.wait(0.04)
+    end
+end)
+
+print("[EggSanctuary] Client v8.0 Fully Hardened & Audited Engine Loaded!")

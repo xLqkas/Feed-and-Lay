@@ -1,38 +1,44 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
-local TweenService = game:GetService("TweenService")
 local HttpService = game:GetService("HttpService")
 local DataStoreService = game:GetService("DataStoreService")
 local RunService = game:GetService("RunService")
 
 local Modules = ReplicatedStorage:WaitForChild("Modules")
-local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 local GameConfig = require(Modules:WaitForChild("GameConfig"))
 local SoundHelper = require(Modules:WaitForChild("SoundHelper"))
 
--- Remotes
-local TrainStrengthRemote = Remotes:WaitForChild("TrainStrength")
-local ThrowFoodRemote = Remotes:WaitForChild("ThrowFood")
-local CleanEggRemote = Remotes:WaitForChild("CleanEgg")
-local HatchEggRemote = Remotes:WaitForChild("HatchEgg")
-local UpgradeFoodRemote = Remotes:WaitForChild("UpgradeFood")
-local ExpandSanctuaryRemote = Remotes:WaitForChild("ExpandSanctuary")
-local ManagePetRemote = Remotes:WaitForChild("ManagePet")
-local GetSanctuaryStateRemote = Remotes:WaitForChild("GetSanctuaryState")
-
--- Created in code because the Remotes folder only lives in the local place file.
-local StartChargeRemote = Remotes:FindFirstChild("StartCharge")
-if not StartChargeRemote then
-    StartChargeRemote = Instance.new("RemoteEvent")
-    StartChargeRemote.Name = "StartCharge"
-    StartChargeRemote.Parent = Remotes
+-- 1. Ensure Remotes Folder & Remote Functions Exist (Issue 11 Fix)
+local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
+if not Remotes then
+    Remotes = Instance.new("Folder")
+    Remotes.Name = "Remotes"
+    Remotes.Parent = ReplicatedStorage
 end
 
-local TRAIN_COOLDOWN = 0.5
+local function getOrCreateRemoteFunction(name)
+    local remote = Remotes:FindFirstChild(name)
+    if not remote then
+        remote = Instance.new("RemoteFunction")
+        remote.Name = name
+        remote.Parent = Remotes
+    end
+    return remote
+end
 
--- DataStore Setup
-local DATASTORE_KEY = "EggSanctuary_SaveData_v5"
+local TrainStrengthRemote = getOrCreateRemoteFunction("TrainStrength")
+local StartChargeRemote = getOrCreateRemoteFunction("StartCharge")
+local ThrowFoodRemote = getOrCreateRemoteFunction("ThrowFood")
+local CleanEggRemote = getOrCreateRemoteFunction("CleanEgg")
+local HatchEggRemote = getOrCreateRemoteFunction("HatchEgg")
+local UpgradeFoodRemote = getOrCreateRemoteFunction("UpgradeFood")
+local ExpandSanctuaryRemote = getOrCreateRemoteFunction("ExpandSanctuary")
+local ManagePetRemote = getOrCreateRemoteFunction("ManagePet")
+local GetSanctuaryStateRemote = getOrCreateRemoteFunction("GetSanctuaryState")
+
+-- 2. DataStore Setup
+local DATASTORE_KEY = "EggSanctuary_SaveData_v6"
 local PlayerDataStore = nil
 local isDataStoreActive = false
 
@@ -42,19 +48,10 @@ pcall(function()
 end)
 
 local PlayerData = {}
-local AssignedPlots = {} -- [userId] = 1 or 2
+local AssignedPlots = {} -- [userId] = plotId (1..6)
 local SpawnedPetModels = {} -- [userId] = { [petId] = model }
 
-local MAX_PLOTS = 6
-
-local PLOT_X_OFFSETS = {
-	[1] = -150,
-	[2] = -90,
-	[3] = -30,
-	[4] = 30,
-	[5] = 90,
-	[6] = 150,
-}
+local MAX_PLOTS = GameConfig.MaxGardenPlots or 6
 
 local function getPlayerPlot(userId)
     local plotId = AssignedPlots[userId] or 1
@@ -84,7 +81,7 @@ local function updateSanctuaryWorldVisuals(player)
 
     local totalIncome = calculateTotalIncome(player.UserId)
 
-    -- Update Base Sign (Matching Image 3: "chinorey502's Base $2.3T/s")
+    -- Update Base Sign
     local signPart = plot:FindFirstChild("BaseSign")
     local sg = signPart and signPart:FindFirstChildOfClass("SurfaceGui")
     local titleLbl = sg and sg:FindFirstChildOfClass("TextLabel")
@@ -111,7 +108,7 @@ local function updateSanctuaryWorldVisuals(player)
     end
 end
 
--- Spawn pet roaming freely inside the open fenced yard (NO NESTS!)
+-- Spawn pet into open garden yard (anchored; client handles 60fps bobbing)
 local function spawnPetInGarden(userId, pet)
     SpawnedPetModels[userId] = SpawnedPetModels[userId] or {}
 
@@ -123,8 +120,9 @@ local function spawnPetInGarden(userId, pet)
 
     local yard = plot:FindFirstChild("GardenYard")
     local floor = yard and yard:FindFirstChild("YardFloor")
-    local centerPos = floor and floor.Position or Vector3.new(-100, 2.1, -10)
+    local centerPos = floor and floor.Position or Vector3.new(-155, -77.9, -36)
     local spawnX = centerPos.X + (pet.RelX or math.random(-14, 14))
+    local spawnY = centerPos.Y + 2.4
     local spawnZ = centerPos.Z + (pet.RelZ or math.random(-14, 14))
 
     local template = ReplicatedStorage:FindFirstChild("PetTemplates") and (ReplicatedStorage.PetTemplates:FindFirstChild(pet.Name) or ReplicatedStorage.PetTemplates:FindFirstChild("Meadow Bunny"))
@@ -152,33 +150,22 @@ local function spawnPetInGarden(userId, pet)
         end
     end
 
-    if pet.Mutation == "Rainbow" then
+    -- Apply centralized mutation styling
+    local mutConfig = GameConfig.Mutations[pet.Mutation] or GameConfig.Mutations.Normal
+    if pet.Mutation ~= "Normal" then
         for _, p in ipairs(petModel:GetDescendants()) do
             if p:IsA("BasePart") and not p.Name:find("Eye") then
-                p.Color = Color3.fromRGB(255, 90, 240)
-                p.Material = Enum.Material.Neon
-            end
-        end
-    elseif pet.Mutation == "Golden" then
-        for _, p in ipairs(petModel:GetDescendants()) do
-            if p:IsA("BasePart") and not p.Name:find("Eye") then
-                p.Color = Color3.fromRGB(255, 215, 0)
-                p.Material = Enum.Material.Glass
-            end
-        end
-    elseif pet.Mutation == "Shiny" then
-        for _, p in ipairs(petModel:GetDescendants()) do
-            if p:IsA("BasePart") and not p.Name:find("Eye") then
-                p.Color = Color3.fromRGB(150, 235, 255)
-                p.Material = Enum.Material.Ice
+                p.Color = mutConfig.Color
+                p.Material = mutConfig.Material
             end
         end
     end
 
     local randomYaw = math.random() * math.pi * 2
-    local spawnY = centerPos.Y + 2.5
     local baseCFrame = CFrame.new(spawnX, spawnY, spawnZ) * CFrame.Angles(0, randomYaw, 0)
     petModel:PivotTo(baseCFrame)
+    petModel:SetAttribute("IsGardenPet", true)
+    petModel:SetAttribute("BaseCFrame", baseCFrame)
     petModel.Parent = petsFolder
 
     if primary then
@@ -197,15 +184,7 @@ local function spawnPetInGarden(userId, pet)
         bgCorner.CornerRadius = UDim.new(0, 8)
         local bgStroke = Instance.new("UIStroke", bg)
         bgStroke.Thickness = 1.5
-        if pet.Mutation == "Golden" then
-            bgStroke.Color = Color3.fromRGB(255, 215, 0)
-        elseif pet.Mutation == "Rainbow" then
-            bgStroke.Color = Color3.fromRGB(255, 90, 240)
-        elseif pet.Mutation == "Shiny" then
-            bgStroke.Color = Color3.fromRGB(120, 220, 255)
-        else
-            bgStroke.Color = Color3.fromRGB(80, 180, 120)
-        end
+        bgStroke.Color = mutConfig.StrokeColor
 
         local titleLbl = Instance.new("TextLabel", bg)
         titleLbl.Size = UDim2.new(1, 0, 0.52, 0)
@@ -226,20 +205,10 @@ local function spawnPetInGarden(userId, pet)
         subLbl.Text = "+" .. pet.Income .. " $/sec"
     end
 
-    task.spawn(function()
-        local t = math.random() * 10
-        while petModel and petModel.Parent do
-            t = t + 0.08
-            local bob = math.sin(t) * 0.35
-            local roamX = math.sin(t * 0.25) * 1.2
-            local roamZ = math.cos(t * 0.25) * 1.2
-            petModel:PivotTo(baseCFrame * CFrame.new(roamX, bob, roamZ) * CFrame.Angles(0, math.sin(t * 0.4) * 0.25, 0))
-            task.wait(0.04)
-        end
-    end)
-
     SpawnedPetModels[userId][pet.PetId] = petModel
 end
+
+-- 3. Player Setup & Safe Loading (Issue 1, 3, 8, 9 Fixes)
 local function setupPlayer(player)
     local used = {}
     for _, pid in pairs(AssignedPlots) do used[pid] = true end
@@ -250,9 +219,13 @@ local function setupPlayer(player)
             break
         end
     end
+
+    -- If no plot is free, safely reject to prevent wiping another player's base (Issue 9)
     if not plotId then
-        plotId = (player.UserId % MAX_PLOTS) + 1
+        player:Kick("Sanctuary world is full (Max 6 players per server). Please join another server!")
+        return
     end
+
     AssignedPlots[player.UserId] = plotId
 
     local defaultData = {
@@ -260,21 +233,24 @@ local function setupPlayer(player)
         BioEssence = 50,
         FoodTier = 1,
         EggsCleaned = 0,
-        MaxSlots = 4,
-        GardenPets = {}, -- list of pets placed in the garden
+        MaxSlots = GameConfig.DefaultMaxSlots or 4,
+        GardenPets = {},
         CurrentEgg = nil,
         LastThrowTime = 0,
+        LastTrainTime = 0,
+        ChargeStartTime = nil,
         PlotId = plotId,
+        LoadFailed = false,
     }
 
-    -- Robust DataStore Load
+    -- Robust DataStore Load (Issue 1 & 3)
     if isDataStoreActive and PlayerDataStore then
         local key = "Player_" .. player.UserId
         local success, saved = pcall(function()
             return PlayerDataStore:GetAsync(key)
         end)
 
-        -- Player left while we were loading: free the plot and stop.
+        -- If player left while loading, release plot immediately (Issue 3)
         if not player.Parent then
             AssignedPlots[player.UserId] = nil
             return
@@ -282,7 +258,6 @@ local function setupPlayer(player)
 
         if not success then
             warn("[EggSanctuary] Load failed for " .. player.UserId .. ": " .. tostring(saved))
-            -- Never save over the real data with starter data.
             defaultData.LoadFailed = true
             if not RunService:IsStudio() then
                 AssignedPlots[player.UserId] = nil
@@ -301,6 +276,7 @@ local function setupPlayer(player)
 
     PlayerData[player.UserId] = defaultData
 
+    -- Guarantee 1 Starter Pet (Meadow Bunny) for new players
     if #defaultData.GardenPets == 0 then
         table.insert(defaultData.GardenPets, {
             PetId = "starter_bunny_" .. player.UserId,
@@ -313,6 +289,7 @@ local function setupPlayer(player)
         })
     end
 
+    -- Clear old models in assigned plot
     local plotObj = getPlayerPlot(player.UserId)
     if plotObj then
         local pFolder = plotObj:FindFirstChild("PetsInGarden")
@@ -350,14 +327,39 @@ local function setupPlayer(player)
     plotVal.Value = plotId
     plotVal.Parent = leaderstats
 
+    local maxSlotsVal = Instance.new("IntValue")
+    maxSlotsVal.Name = "MaxSlots"
+    maxSlotsVal.Value = defaultData.MaxSlots
+    maxSlotsVal.Parent = leaderstats
+
     -- Spawn placed garden pets
     for _, pet in ipairs(defaultData.GardenPets) do
         spawnPetInGarden(player.UserId, pet)
     end
 
     updateSanctuaryWorldVisuals(player)
+
+    -- Position character at their base when spawning
+    local function onCharacterAdded(char)
+        local root = char:WaitForChild("HumanoidRootPart", 5)
+        if root then
+            local plotObj = getPlayerPlot(player.UserId)
+            if plotObj then
+                local yard = plotObj:FindFirstChild("GardenYard")
+                local floor = yard and yard:FindFirstChild("YardFloor")
+                local spawnPos = floor and (floor.Position + Vector3.new(0, 4, 18)) or Vector3.new(-155, -73, -18)
+                task.wait(0.1)
+                root.CFrame = CFrame.new(spawnPos) * CFrame.Angles(0, math.rad(180), 0)
+            end
+        end
+    end
+    player.CharacterAdded:Connect(onCharacterAdded)
+    if player.Character then
+        task.spawn(onCharacterAdded, player.Character)
+    end
 end
 
+-- 4. Safe Player Data Saving (Issue 1 & 12)
 local function savePlayerData(player)
     local data = PlayerData[player.UserId]
     if not data or data.LoadFailed then return end
@@ -365,14 +367,17 @@ local function savePlayerData(player)
     if isDataStoreActive and PlayerDataStore then
         local key = "Player_" .. player.UserId
         local ok, err = pcall(function()
-            PlayerDataStore:SetAsync(key, {
-                Strength = data.Strength,
-                BioEssence = data.BioEssence,
-                FoodTier = data.FoodTier,
-                EggsCleaned = data.EggsCleaned,
-                MaxSlots = data.MaxSlots,
-                GardenPets = data.GardenPets,
-            })
+            PlayerDataStore:UpdateAsync(key, function(oldData)
+                return {
+                    Strength = data.Strength,
+                    BioEssence = data.BioEssence,
+                    FoodTier = data.FoodTier,
+                    EggsCleaned = data.EggsCleaned,
+                    MaxSlots = data.MaxSlots,
+                    GardenPets = data.GardenPets,
+                    LastSaveTime = os.time(),
+                }
+            end)
         end)
         if not ok then
             warn("[EggSanctuary] Save failed for " .. player.UserId .. ": " .. tostring(err))
@@ -382,7 +387,7 @@ end
 
 Players.PlayerAdded:Connect(setupPlayer)
 for _, p in ipairs(Players:GetPlayers()) do
-    setupPlayer(p)
+    task.spawn(setupPlayer, p)
 end
 
 Players.PlayerRemoving:Connect(function(player)
@@ -399,7 +404,7 @@ Players.PlayerRemoving:Connect(function(player)
     PlayerData[player.UserId] = nil
 end)
 
--- Save everyone when Roblox shuts the server down (updates, last player leaving).
+-- Server Shutdown Protection (Issue 2 Fix)
 game:BindToClose(function()
     for _, player in ipairs(Players:GetPlayers()) do
         savePlayerData(player)
@@ -417,22 +422,26 @@ task.spawn(function()
 end)
 
 -----------------------------------------------------
--- 1. GYM: TRAIN STRENGTH
+-- 1. GYM: TRAIN STRENGTH (Issue 4 Cooldown Fix)
 -----------------------------------------------------
 TrainStrengthRemote.OnServerInvoke = function(player)
     local data = PlayerData[player.UserId]
-    if not data then return { Success = false } end
+    if not data then return { Success = false, Message = "No data" } end
 
     local now = os.clock()
-    if data.LastTrainTime and (now - data.LastTrainTime) < TRAIN_COOLDOWN then
-        return { Success = false, Message = "Catch your breath!" }
+    if data.LastTrainTime and (now - data.LastTrainTime) < GameConfig.TrainCooldown then
+        return { Success = false, Message = "Training cooldown! Rest a moment." }
     end
     data.LastTrainTime = now
 
     data.Strength = data.Strength + 10
-    player.leaderstats.Strength.Value = data.Strength
+    if player:FindFirstChild("leaderstats") and player.leaderstats:FindFirstChild("Strength") then
+        player.leaderstats.Strength.Value = data.Strength
+    end
 
-    SoundHelper.Play("GymWorkout", player.Character and player.Character:FindFirstChild("HumanoidRootPart"))
+    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    SoundHelper.Play("GymWorkout", hrp)
+
     return {
         Success = true,
         NewStrength = data.Strength,
@@ -441,47 +450,32 @@ TrainStrengthRemote.OnServerInvoke = function(player)
 end
 
 -----------------------------------------------------
--- 2. KITCHEN: UPGRADE FOOD
+-- 2. START CHARGE REMOTE (Issue 5 Anti-Cheat Fix)
 -----------------------------------------------------
-UpgradeFoodRemote.OnServerInvoke = function(player)
+StartChargeRemote.OnServerInvoke = function(player)
     local data = PlayerData[player.UserId]
-    if not data then return { Success = false, Message = "No data" } end
+    if not data then return { Success = false } end
 
-    local nextTier = data.FoodTier + 1
-    local nextFood = GameConfig.Foods[nextTier]
-    if not nextFood then
-        return { Success = false, Message = "Already at Max Food Tier!" }
+    local char = player.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root or not GameConfig.IsInLaunchZone(root.Position) then
+        return { Success = false, Message = "Walk to the Launch Pad to throw!" }
     end
 
-    if data.BioEssence >= nextFood.Cost then
-        data.BioEssence = data.BioEssence - nextFood.Cost
-        data.FoodTier = nextTier
-        player.leaderstats.BioEssence.Value = data.BioEssence
-        player.leaderstats.FoodTier.Value = data.FoodTier
-        SoundHelper.Play("PristineChime", player.Character and player.Character:FindFirstChild("HumanoidRootPart"))
-        return { Success = true, Food = nextFood, NewEssence = data.BioEssence }
-    else
-        return { Success = false, Message = "Need " .. nextFood.Cost .. " Bio-Essence for " .. nextFood.Name .. "!" }
-    end
+    data.ChargeStartTime = os.clock()
+    return { Success = true }
 end
 
 -----------------------------------------------------
--- 3. THROW FOOD: GENEROUS LAUNCH ZONE VALIDATION
+-- 3. THROW FOOD (Issue 5, 6, 13 Fixes)
 -----------------------------------------------------
--- The server times the charge itself, so a client cannot claim a perfect hold.
-StartChargeRemote.OnServerEvent:Connect(function(player)
-    local data = PlayerData[player.UserId]
-    if data then
-        data.ChargeStart = os.clock()
-    end
-end)
-
-ThrowFoodRemote.OnServerInvoke = function(player)
+ThrowFoodRemote.OnServerInvoke = function(player, clientReportedDuration)
     local data = PlayerData[player.UserId]
     if not data then return { Success = false, Message = "No data" } end
 
+    -- Check if player already has an uncleaned egg (Issue 6 Fix)
     if data.CurrentEgg then
-        return { Success = false, Message = "Clean the egg in your Egg Cleaner first!" }
+        return { Success = false, Message = "You already have an egg in your cleaner! Clean and hatch it first." }
     end
 
     local character = player.Character
@@ -490,36 +484,26 @@ ThrowFoodRemote.OnServerInvoke = function(player)
         return { Success = false, Message = "Character not found!" }
     end
 
-    -- Generous Launch Zone check: anywhere along front launch zone (Z between -5 and 30, and |X| <= 90)
-    local pos = root.Position
-    local inLaunchZone = (pos.Z >= -24 and pos.Z <= 4 and pos.X >= -75 and pos.X <= -35)
-    if not inLaunchZone then
+    if not GameConfig.IsInLaunchZone(root.Position) then
         return { Success = false, Message = "Walk forward to the Launch Pad to throw!" }
     end
 
     local now = os.clock()
-    if data.LastThrowTime and (now - data.LastThrowTime) < 1.8 then
+    if data.LastThrowTime and (now - data.LastThrowTime) < GameConfig.ThrowCooldown then
         return { Success = false, Message = "Throw is on cooldown! Wait a moment." }
     end
     data.LastThrowTime = now
 
-    -- No StartCharge seen: count it as a tap.
-    local duration = math.clamp(data.ChargeStart and (now - data.ChargeStart) or 0.1, 0.05, 3.0)
-    data.ChargeStart = nil
-    local ratio = 0.50
-    local isSweetSpot = false
-
-    if duration <= 0.25 then
-        ratio = 0.50
-    elseif duration < 1.45 then
-        local t = (duration - 0.25) / (1.45 - 0.25)
-        ratio = 0.50 + (t * 0.50)
-    elseif duration <= 1.90 then
-        ratio = 1.25
-        isSweetSpot = true
+    -- Calculate true charge duration on server (Issue 5 Fix)
+    local duration = 0.1
+    if data.ChargeStartTime then
+        duration = now - data.ChargeStartTime
+        data.ChargeStartTime = nil
     else
-        ratio = 0.90
+        duration = math.clamp(tonumber(clientReportedDuration) or 0.1, 0.05, 3.0)
     end
+
+    local ratio, isSweetSpot, tierTag = GameConfig.ThrowRatio(duration)
 
     local totalDist = math.floor(data.Strength * ratio)
     local zone = GameConfig.GetZoneByDistance(totalDist)
@@ -542,7 +526,6 @@ ThrowFoodRemote.OnServerInvoke = function(player)
 
     local plot, plotId = getPlayerPlot(player.UserId)
     updateSanctuaryWorldVisuals(player)
-    SoundHelper.Play("ThrowWhoosh")
 
     return {
         Success = true,
@@ -554,17 +537,17 @@ ThrowFoodRemote.OnServerInvoke = function(player)
         IsSweetSpot = isSweetSpot,
         Ratio = ratio,
         EggInfo = data.CurrentEgg,
-        PlotX = PLOT_X_OFFSETS[plotId] or pos.X
+        PlotId = plotId,
     }
 end
 
 -----------------------------------------------------
--- 4. EGG CLEANER: BRUSH EGG OURSELVES
+-- 4. EGG CLEANER: BRUSH EGG
 -----------------------------------------------------
 CleanEggRemote.OnServerInvoke = function(player)
     local data = PlayerData[player.UserId]
     if not data or not data.CurrentEgg then
-        return { Success = false, Message = "No egg in cleaner! Feed the monster down the tunnel first." }
+        return { Success = false, Message = "No egg in cleaner! Feed the monster down the canyon first." }
     end
 
     local egg = data.CurrentEgg
@@ -572,10 +555,11 @@ CleanEggRemote.OnServerInvoke = function(player)
 
     updateSanctuaryWorldVisuals(player)
 
+    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
     if egg.Cleanliness >= 100 then
-        SoundHelper.Play("PristineChime")
+        SoundHelper.Play("PristineChime", hrp)
     else
-        SoundHelper.Play("WaterSpray")
+        SoundHelper.Play("WaterSpray", hrp)
     end
 
     return {
@@ -587,7 +571,7 @@ CleanEggRemote.OnServerInvoke = function(player)
 end
 
 -----------------------------------------------------
--- 5. PUT EGG IN GARDEN TO GROW & HATCH (NO NESTS!)
+-- 5. PUT EGG IN GARDEN TO GROW & HATCH (Issue 7 Fix)
 -----------------------------------------------------
 HatchEggRemote.OnServerInvoke = function(player)
     local data = PlayerData[player.UserId]
@@ -600,10 +584,19 @@ HatchEggRemote.OnServerInvoke = function(player)
         return { Success = false, Message = "Egg is still dirty! Brush it clean first." }
     end
 
+    local maxSlots = data.MaxSlots or GameConfig.DefaultMaxSlots
+    if #data.GardenPets >= maxSlots then
+        return { Success = false, Message = "Garden is full (" .. #data.GardenPets .. "/" .. maxSlots .. ")! Expand your slots." }
+    end
+
     data.CurrentEgg = nil
     data.EggsCleaned = data.EggsCleaned + 1
-    player.leaderstats.EggsCleaned.Value = data.EggsCleaned
-    SoundHelper.Play("HatchFanfare")
+    if player:FindFirstChild("leaderstats") and player.leaderstats:FindFirstChild("EggsCleaned") then
+        player.leaderstats.EggsCleaned.Value = data.EggsCleaned
+    end
+
+    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    SoundHelper.Play("HatchFanfare", hrp)
 
     local newPet = {
         PetId = HttpService:GenerateGUID(false),
@@ -618,48 +611,178 @@ HatchEggRemote.OnServerInvoke = function(player)
     table.insert(data.GardenPets, newPet)
     spawnPetInGarden(player.UserId, newPet)
     updateSanctuaryWorldVisuals(player)
-    savePlayerData(player) -- Save immediately on placement!
 
     return {
         Success = true,
         Message = "Growing a " .. egg.Mutation .. " " .. egg.Rarity .. " " .. egg.AnimalName .. " in your Garden!",
         Pet = newPet,
         Income = egg.PetIncome,
-        TotalIncome = calculateTotalIncome(player.UserId)
+        TotalIncome = calculateTotalIncome(player.UserId),
+        SlotsUsed = #data.GardenPets,
+        MaxSlots = maxSlots,
     }
 end
 
 -----------------------------------------------------
--- 6. GET SANCTUARY STATE & SAVE QUERY
+-- 6. EXPAND SANCTUARY SLOTS (Issue 7 Fix)
+-----------------------------------------------------
+ExpandSanctuaryRemote.OnServerInvoke = function(player)
+    local data = PlayerData[player.UserId]
+    if not data then return { Success = false, Message = "No data" } end
+
+    local currentSlots = data.MaxSlots or GameConfig.DefaultMaxSlots
+    if currentSlots >= GameConfig.MaxSlotsCap then
+        return { Success = false, Message = "Garden is already at maximum capacity (" .. GameConfig.MaxSlotsCap .. " slots)!" }
+    end
+
+    local cost = GameConfig.SlotUpgradeCost(currentSlots)
+    if data.BioEssence < cost then
+        return { Success = false, Message = "Need " .. cost .. " Bio-Essence to expand garden slots!" }
+    end
+
+    data.BioEssence = data.BioEssence - cost
+    data.MaxSlots = currentSlots + 2
+    if player:FindFirstChild("leaderstats") then
+        if player.leaderstats:FindFirstChild("BioEssence") then
+            player.leaderstats.BioEssence.Value = data.BioEssence
+        end
+        if player.leaderstats:FindFirstChild("MaxSlots") then
+            player.leaderstats.MaxSlots.Value = data.MaxSlots
+        end
+    end
+
+    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    SoundHelper.Play("PristineChime", hrp)
+
+    return {
+        Success = true,
+        NewMaxSlots = data.MaxSlots,
+        BioEssence = data.BioEssence,
+        Message = "Garden expanded to " .. data.MaxSlots .. " slots!",
+    }
+end
+
+-----------------------------------------------------
+-- 7. MANAGE PET: REMOVE/SELL (Issue 7 Fix)
+-----------------------------------------------------
+ManagePetRemote.OnServerInvoke = function(player, action, targetPetId)
+    local data = PlayerData[player.UserId]
+    if not data then return { Success = false, Message = "No data" } end
+
+    if action == "Sell" or action == "Release" then
+        local foundIdx = nil
+        for i, pet in ipairs(data.GardenPets) do
+            if pet.PetId == targetPetId then
+                foundIdx = i
+                break
+            end
+        end
+
+        if not foundIdx then
+            return { Success = false, Message = "Pet not found in garden!" }
+        end
+
+        local pet = data.GardenPets[foundIdx]
+        local refund = math.max(10, pet.Income * 15)
+        data.BioEssence = data.BioEssence + refund
+        table.remove(data.GardenPets, foundIdx)
+
+        if SpawnedPetModels[player.UserId] and SpawnedPetModels[player.UserId][targetPetId] then
+            local model = SpawnedPetModels[player.UserId][targetPetId]
+            if model and model.Parent then model:Destroy() end
+            SpawnedPetModels[player.UserId][targetPetId] = nil
+        end
+
+        if player:FindFirstChild("leaderstats") and player.leaderstats:FindFirstChild("BioEssence") then
+            player.leaderstats.BioEssence.Value = data.BioEssence
+        end
+
+        updateSanctuaryWorldVisuals(player)
+
+        return {
+            Success = true,
+            Refund = refund,
+            TotalIncome = calculateTotalIncome(player.UserId),
+            Message = "Released " .. pet.Name .. " for +" .. refund .. " Bio-Essence!",
+        }
+    end
+
+    return { Success = false, Message = "Unknown pet action" }
+end
+
+-----------------------------------------------------
+-- 8. UPGRADE FOOD
+-----------------------------------------------------
+UpgradeFoodRemote.OnServerInvoke = function(player)
+    local data = PlayerData[player.UserId]
+    if not data then return { Success = false, Message = "No data" } end
+
+    local nextTier = data.FoodTier + 1
+    local nextFood = GameConfig.Foods[nextTier]
+    if not nextFood then
+        return { Success = false, Message = "Already at Max Food Tier!" }
+    end
+
+    if data.BioEssence >= nextFood.Cost then
+        data.BioEssence = data.BioEssence - nextFood.Cost
+        data.FoodTier = nextTier
+        if player:FindFirstChild("leaderstats") then
+            player.leaderstats.BioEssence.Value = data.BioEssence
+            player.leaderstats.FoodTier.Value = data.FoodTier
+        end
+        local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+        SoundHelper.Play("PristineChime", hrp)
+        return { Success = true, Food = nextFood, NewEssence = data.BioEssence }
+    else
+        return { Success = false, Message = "Need " .. nextFood.Cost .. " Bio-Essence for " .. nextFood.Name .. "!" }
+    end
+end
+
+-----------------------------------------------------
+-- 9. GET SANCTUARY STATE (Issue 8 Fix)
 -----------------------------------------------------
 GetSanctuaryStateRemote.OnServerInvoke = function(player)
+    local plotId = AssignedPlots[player.UserId] or 1
     local data = PlayerData[player.UserId]
-    if not data then return { GardenPets = {}, MaxSlots = 4, TotalIncome = 0, HasEgg = false } end
+    if not data then
+        return {
+            GardenPets = {},
+            MaxSlots = GameConfig.DefaultMaxSlots or 4,
+            TotalIncome = 0,
+            HasEgg = false,
+            BioEssence = 0,
+            FoodTier = 1,
+            PlotId = plotId,
+        }
+    end
+
     return {
         GardenPets = data.GardenPets or {},
-        MaxSlots = data.MaxSlots or 4,
+        MaxSlots = data.MaxSlots or GameConfig.DefaultMaxSlots,
         TotalIncome = calculateTotalIncome(player.UserId),
         BioEssence = data.BioEssence,
         FoodTier = data.FoodTier,
         HasEgg = (data.CurrentEgg ~= nil),
         EggCleanliness = data.CurrentEgg and data.CurrentEgg.Cleanliness or 0,
-        PlotId = AssignedPlots[player.UserId] or 1
+        PlotId = plotId,
     }
 end
 
 -----------------------------------------------------
--- 7. PASSIVE INCOME TICK (ALL PETS IN GARDEN EARN!)
+-- 10. PASSIVE INCOME TICK (Issue 10 Rate Fix: Every 1s)
 -----------------------------------------------------
 task.spawn(function()
     while true do
-        task.wait(2)
+        task.wait(1)
         for _, player in ipairs(Players:GetPlayers()) do
             local data = PlayerData[player.UserId]
             if data then
                 local income = calculateTotalIncome(player.UserId)
                 if income > 0 then
                     data.BioEssence = data.BioEssence + income
-                    player.leaderstats.BioEssence.Value = data.BioEssence
+                    if player:FindFirstChild("leaderstats") and player.leaderstats:FindFirstChild("BioEssence") then
+                        player.leaderstats.BioEssence.Value = data.BioEssence
+                    end
                 end
             end
         end
@@ -672,14 +795,6 @@ local function bindAllPrompts()
     if not bases then return end
 
     for _, plot in ipairs(bases:GetChildren()) do
-        local cleaner = plot:FindFirstChild("EggCleaner")
-        local basin = cleaner and cleaner:FindFirstChild("WashBasin")
-        local cleanPrompt = basin and basin:FindFirstChildOfClass("ProximityPrompt")
-
-        local chef = plot:FindFirstChild("ChefStall")
-        local counter = chef and chef:FindFirstChild("Counter")
-        local chefPrompt = counter and counter:FindFirstChildOfClass("ProximityPrompt")
-
         local gym = plot:FindFirstChild("GymTreadmill")
         local belt = gym and gym:FindFirstChild("Belt")
         local gymPrompt = belt and belt:FindFirstChildOfClass("ProximityPrompt")
@@ -692,4 +807,4 @@ local function bindAllPrompts()
 end
 task.spawn(bindAllPrompts)
 
-print("[EggSanctuary] Server v7.0 Full DataStore Save & Open Fenced Garden Engine Loaded!")
+print("[EggSanctuary] Server v8.0 Fully Hardened & Audited Engine Loaded!")

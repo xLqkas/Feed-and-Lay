@@ -21,6 +21,7 @@ local CleanEggRemote = Remotes:WaitForChild("CleanEgg")
 local HatchEggRemote = Remotes:WaitForChild("HatchEgg")
 local UpgradeFoodRemote = Remotes:WaitForChild("UpgradeFood")
 local GetSanctuaryStateRemote = Remotes:WaitForChild("GetSanctuaryState")
+local StartChargeRemote = Remotes:WaitForChild("StartCharge")
 
 -- GUI References
 local hudGui = PlayerGui:WaitForChild("EggSanctuaryHUD")
@@ -203,6 +204,7 @@ local function startCharge()
 
     isCharging = true
     chargeStartTime = os.clock()
+    StartChargeRemote:FireServer()
 
     ThrowBtn.Text = "CHARGING...\nRELEASE TO THROW!"
     ThrowBtn.BackgroundColor3 = Color3.fromRGB(255, 140, 20)
@@ -212,7 +214,6 @@ end
 local function endCharge()
     if not isCharging then return end
     isCharging = false
-    local duration = os.clock() - chargeStartTime
     removeLandingMarker()
 
     setMeterSegments(0)
@@ -224,7 +225,7 @@ local function endCharge()
         return
     end
 
-    executeThrow(duration)
+    executeThrow()
 end
 
 -- RenderStepped Location & Segment Charge Tracker
@@ -351,7 +352,7 @@ end
 -----------------------------------------------------
 -- EXECUTE THROW
 -----------------------------------------------------
-function executeThrow(chargeDuration)
+function executeThrow()
     if isThrowing then return end
     isThrowing = true
     ThrowBtn.Text = "LAUNCHING..."
@@ -361,7 +362,7 @@ function executeThrow(chargeDuration)
     local root = character and character:FindFirstChild("HumanoidRootPart")
     local startPos = root and (root.Position + Vector3.new(0, 3, 3)) or Vector3.new(myPlotX, 5, 20)
 
-    local res = ThrowFoodRemote:InvokeServer(chargeDuration)
+    local res = ThrowFoodRemote:InvokeServer()
     if res and res.Success then
         hasEggInCleaner = true
         local feedback = res.IsSweetSpot and "🔥 SWEET SPOT LAUNCH! " or "LAUNCHED! "
@@ -692,6 +693,8 @@ GymNavBtn.MouseButton1Click:Connect(function()
     if res and res.Success then
         showNotice("WORKOUT! +10 Reach (" .. res.NewStrength .. " Studs)", Color3.fromRGB(255, 140, 80))
         updateUI()
+    elseif res and res.Message then
+        showNotice(res.Message, Color3.fromRGB(255, 200, 100))
     end
 end)
 

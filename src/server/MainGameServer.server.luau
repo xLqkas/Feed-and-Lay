@@ -21,6 +21,16 @@ local ExpandSanctuaryRemote = Remotes:WaitForChild("ExpandSanctuary")
 local ManagePetRemote = Remotes:WaitForChild("ManagePet")
 local GetSanctuaryStateRemote = Remotes:WaitForChild("GetSanctuaryState")
 
+-- Created in code because the Remotes folder only lives in the local place file.
+local StartChargeRemote = Remotes:FindFirstChild("StartCharge")
+if not StartChargeRemote then
+    StartChargeRemote = Instance.new("RemoteEvent")
+    StartChargeRemote.Name = "StartCharge"
+    StartChargeRemote.Parent = Remotes
+end
+
+local TRAIN_COOLDOWN = 0.5
+
 -- DataStore Setup
 local DATASTORE_KEY = "EggSanctuary_SaveData_v5"
 local PlayerDataStore = nil
@@ -413,6 +423,12 @@ TrainStrengthRemote.OnServerInvoke = function(player)
     local data = PlayerData[player.UserId]
     if not data then return { Success = false } end
 
+    local now = os.clock()
+    if data.LastTrainTime and (now - data.LastTrainTime) < TRAIN_COOLDOWN then
+        return { Success = false, Message = "Catch your breath!" }
+    end
+    data.LastTrainTime = now
+
     data.Strength = data.Strength + 10
     player.leaderstats.Strength.Value = data.Strength
 
@@ -452,9 +468,21 @@ end
 -----------------------------------------------------
 -- 3. THROW FOOD: GENEROUS LAUNCH ZONE VALIDATION
 -----------------------------------------------------
-ThrowFoodRemote.OnServerInvoke = function(player, chargeDuration)
+-- The server times the charge itself, so a client cannot claim a perfect hold.
+StartChargeRemote.OnServerEvent:Connect(function(player)
+    local data = PlayerData[player.UserId]
+    if data then
+        data.ChargeStart = os.clock()
+    end
+end)
+
+ThrowFoodRemote.OnServerInvoke = function(player)
     local data = PlayerData[player.UserId]
     if not data then return { Success = false, Message = "No data" } end
+
+    if data.CurrentEgg then
+        return { Success = false, Message = "Clean the egg in your Egg Cleaner first!" }
+    end
 
     local character = player.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -475,7 +503,9 @@ ThrowFoodRemote.OnServerInvoke = function(player, chargeDuration)
     end
     data.LastThrowTime = now
 
-    local duration = math.clamp(tonumber(chargeDuration) or 0.1, 0.05, 3.0)
+    -- No StartCharge seen: count it as a tap.
+    local duration = math.clamp(data.ChargeStart and (now - data.ChargeStart) or 0.1, 0.05, 3.0)
+    data.ChargeStart = nil
     local ratio = 0.50
     local isSweetSpot = false
 

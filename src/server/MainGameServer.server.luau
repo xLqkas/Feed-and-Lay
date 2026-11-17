@@ -89,19 +89,21 @@ local function updateSanctuaryWorldVisuals(player)
         titleLbl.Text = player.DisplayName:upper() .. "'S BASE (+" .. totalIncome .. " $/s)"
     end
 
-    -- Update ActiveEgg visual at EggCleaner
+    -- Update ActiveEgg visual at EggCleaner (Covered in mud/sludge until 100% cleaned)
     local cleaner = plot:FindFirstChild("EggCleaner")
     if cleaner and cleaner:FindFirstChild("ActiveEgg") then
         local eggPart = cleaner.ActiveEgg
         if data.CurrentEgg then
             eggPart.Transparency = 0
-            local progress = (data.CurrentEgg.Cleanliness or 0) / 100
-            eggPart.Color = Color3.fromRGB(
-                math.floor(115 + (245 - 115) * progress),
-                math.floor(85 + (245 - 85) * progress),
-                math.floor(55 + (255 - 55) * progress)
-            )
-            eggPart.Material = (data.CurrentEgg.Cleanliness >= 100) and Enum.Material.Neon or Enum.Material.Slate
+            if (data.CurrentEgg.Cleanliness or 0) >= 100 then
+                -- Pristine clean revealed egg: Glowing neon gold
+                eggPart.Color = Color3.fromRGB(255, 225, 80)
+                eggPart.Material = Enum.Material.Neon
+            else
+                -- Completely covered in thick muddy sludge/dump until cleaned
+                eggPart.Color = Color3.fromRGB(62, 42, 24)
+                eggPart.Material = Enum.Material.Slate
+            end
         else
             eggPart.Transparency = 1
         end
@@ -422,9 +424,9 @@ task.spawn(function()
 end)
 
 -----------------------------------------------------
--- 1. GYM: TRAIN STRENGTH (Issue 4 Cooldown Fix)
+-- 1. GYM: BICEP CURL TRAINING (Anti-Autoclicker Cooldown)
 -----------------------------------------------------
-TrainStrengthRemote.OnServerInvoke = function(player)
+local function doTrainStrength(player)
     local data = PlayerData[player.UserId]
     if not data then return { Success = false, Message = "No data" } end
 
@@ -448,6 +450,8 @@ TrainStrengthRemote.OnServerInvoke = function(player)
         Gain = 10,
     }
 end
+
+TrainStrengthRemote.OnServerInvoke = doTrainStrength
 
 -----------------------------------------------------
 -- 2. START CHARGE REMOTE (Issue 5 Anti-Cheat Fix)
@@ -542,12 +546,33 @@ ThrowFoodRemote.OnServerInvoke = function(player, clientReportedDuration)
 end
 
 -----------------------------------------------------
--- 4. EGG CLEANER: BRUSH EGG
+-- 4. EGG CLEANER: BRUSH EGG (Section Distance Validation)
 -----------------------------------------------------
+local function isNearEggCleaner(player)
+    local plot, plotId = getPlayerPlot(player.UserId)
+    if not plot then return false end
+    local cleaner = plot:FindFirstChild("EggCleaner")
+    local basin = cleaner and (cleaner:FindFirstChild("WashBasin") or cleaner:FindFirstChildWhichIsA("BasePart"))
+    local cleanerPos = basin and basin.Position or (cleaner and cleaner:GetPivot().Position)
+    if not cleanerPos then return false end
+
+    local char = player.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return false end
+
+    local dist = (root.Position - cleanerPos).Magnitude
+    return dist <= 24, dist
+end
+
 CleanEggRemote.OnServerInvoke = function(player)
     local data = PlayerData[player.UserId]
     if not data or not data.CurrentEgg then
         return { Success = false, Message = "No egg in cleaner! Feed the monster down the canyon first." }
+    end
+
+    -- User requirement: Egg can only be cleaned when player is at the cleaning section
+    if not isNearEggCleaner(player) then
+        return { Success = false, Message = "Walk to your base's Egg Cleaner to wash the egg!" }
     end
 
     local egg = data.CurrentEgg
@@ -577,6 +602,10 @@ HatchEggRemote.OnServerInvoke = function(player)
     local data = PlayerData[player.UserId]
     if not data or not data.CurrentEgg then
         return { Success = false, Message = "No egg to place in garden!" }
+    end
+
+    if not isNearEggCleaner(player) then
+        return { Success = false, Message = "Walk to your base's Egg Cleaner to hatch your egg!" }
     end
 
     local egg = data.CurrentEgg
@@ -795,13 +824,15 @@ local function bindAllPrompts()
     if not bases then return end
 
     for _, plot in ipairs(bases:GetChildren()) do
-        local gym = plot:FindFirstChild("GymTreadmill")
-        local belt = gym and gym:FindFirstChild("Belt")
-        local gymPrompt = belt and belt:FindFirstChildOfClass("ProximityPrompt")
-        if gymPrompt then
-            gymPrompt.Triggered:Connect(function(player)
-                TrainStrengthRemote.OnServerInvoke(player)
-            end)
+        local gym = plot:FindFirstChild("BicepCurlStation") or plot:FindFirstChild("GymTreadmill")
+        if gym then
+            for _, desc in ipairs(gym:GetDescendants()) do
+                if desc:IsA("ProximityPrompt") then
+                    desc.Triggered:Connect(function(player)
+                        doTrainStrength(player)
+                    end)
+                end
+            end
         end
     end
 end

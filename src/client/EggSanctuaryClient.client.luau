@@ -808,30 +808,516 @@ CloseShopBtn.MouseButton1Click:Connect(function()
     ShopModal.Visible = false
 end)
 
--- Gym Workout: Bicep Curl Training with client throttle
-local function performBicepCurl()
-    local now = os.clock()
-    if (now - lastClientGymClick) < GameConfig.TrainCooldown then
-        showNotice("Catch your breath! Rest a moment.", Color3.fromRGB(255, 180, 100))
-        return
-    end
-    lastClientGymClick = now
+-----------------------------------------------------
+-- AUTOMATED BICEP CURL WORKOUT SYSTEM
+-----------------------------------------------------
+-- Floating Billboard for +10 REACH popups
+local function spawnFloatingText(text, color)
+    local char = player.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
 
-    local res = TrainStrengthRemote:InvokeServer()
-    if res and res.Success then
-        showNotice("💪 BICEP CURL! +10 Throw Reach (" .. res.NewStrength .. " Studs)", Color3.fromRGB(255, 140, 80))
-        updateUI()
-    else
-        showNotice(res and res.Message or "Training cooldown!", Color3.fromRGB(255, 120, 100))
-    end
+    local bill = Instance.new("BillboardGui")
+    bill.Size = UDim2.new(0, 240, 0, 50)
+    bill.StudsOffset = Vector3.new(0, 3.2, 0)
+    bill.AlwaysOnTop = true
+    bill.Adornee = hrp
+    bill.Parent = hrp
+
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(1, 0, 1, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = text
+    lbl.Font = Enum.Font.GothamBlack
+    lbl.TextSize = 22
+    lbl.TextColor3 = color or Color3.fromRGB(255, 180, 50)
+    lbl.TextStrokeColor3 = Color3.fromRGB(20, 20, 25)
+    lbl.TextStrokeTransparency = 0.2
+    lbl.Parent = bill
+
+    task.spawn(function()
+        local twPos = TweenService:Create(bill, TweenInfo.new(0.85, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+            StudsOffset = Vector3.new(0, 5.8, 0)
+        })
+        local twFade = TweenService:Create(lbl, TweenInfo.new(0.85, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+            TextTransparency = 1,
+            TextStrokeTransparency = 1
+        })
+        twPos:Play()
+        twFade:Play()
+        task.wait(0.9)
+        bill:Destroy()
+    end)
 end
 
-GymNavBtn.MouseButton1Click:Connect(performBicepCurl)
+-- Create cosmetic hand dumbbells during auto-workout
+local function createWorkoutDumbbells(char)
+    local rHand = char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm")
+    local lHand = char:FindFirstChild("LeftHand") or char:FindFirstChild("Left Arm")
+    if not (rHand and lHand) then return nil end
+
+    local container = Instance.new("Model")
+    container.Name = "WorkoutDumbbells"
+
+    local function makeDumbbell(handPart)
+        local dumbbell = Instance.new("Model")
+        dumbbell.Name = "HandDumbbell"
+
+        local handle = Instance.new("Part")
+        handle.Name = "Handle"
+        handle.Shape = Enum.PartType.Cylinder
+        handle.Size = Vector3.new(0.85, 0.16, 0.16)
+        handle.Material = Enum.Material.Metal
+        handle.Color = Color3.fromRGB(210, 210, 220)
+        handle.CanCollide = false
+        handle.Massless = true
+        handle.CastShadow = false
+        handle.CFrame = handPart.CFrame * CFrame.Angles(0, 0, math.rad(90))
+        handle.Parent = dumbbell
+
+        for _, offset in ipairs({ -0.38, 0.38 }) do
+            local plate = Instance.new("Part")
+            plate.Name = "Plate"
+            plate.Shape = Enum.PartType.Cylinder
+            plate.Size = Vector3.new(0.2, 0.6, 0.6)
+            plate.Material = Enum.Material.SmoothPlastic
+            plate.Color = Color3.fromRGB(35, 35, 40)
+            plate.CanCollide = false
+            plate.Massless = true
+            plate.CastShadow = false
+            plate.CFrame = handle.CFrame * CFrame.new(offset, 0, 0)
+            plate.Parent = dumbbell
+
+            local w = Instance.new("WeldConstraint")
+            w.Part0 = handle
+            w.Part1 = plate
+            w.Parent = handle
+        end
+
+        local weld = Instance.new("WeldConstraint")
+        weld.Part0 = handPart
+        weld.Part1 = handle
+        weld.Parent = handle
+
+        dumbbell.Parent = container
+    end
+
+    makeDumbbell(rHand)
+    makeDumbbell(lHand)
+
+    container.Parent = char
+    return container
+end
+
+-- Helper to find avatar arm joints (compatible with R15 AnimationConstraints/Motor6D and R6)
+local function getArmJoint(char, partName, jointName)
+    local part = char:FindFirstChild(partName)
+    if part then
+        local j = part:FindFirstChild(jointName)
+        if j and (j:IsA("Motor6D") or j:IsA("AnimationConstraint")) then return j end
+    end
+    for _, d in ipairs(char:GetDescendants()) do
+        if d.Name == jointName and (d:IsA("Motor6D") or d:IsA("AnimationConstraint")) then return d end
+    end
+    return nil
+end
+
+-- Workout HUD Card
+local WorkoutHud = Instance.new("Frame")
+WorkoutHud.Name = "WorkoutHud"
+WorkoutHud.Size = UDim2.new(0, 360, 0, 115)
+WorkoutHud.Position = UDim2.new(0.5, -180, 0.82, -125)
+WorkoutHud.BackgroundColor3 = Color3.fromRGB(20, 22, 28)
+WorkoutHud.BackgroundTransparency = 0.1
+WorkoutHud.BorderSizePixel = 0
+WorkoutHud.Visible = false
+WorkoutHud.Parent = HUD
+
+local whCorner = Instance.new("UICorner")
+whCorner.CornerRadius = UDim.new(0, 14)
+whCorner.Parent = WorkoutHud
+
+local whStroke = Instance.new("UIStroke")
+whStroke.Color = Color3.fromRGB(255, 140, 40)
+whStroke.Thickness = 2.5
+whStroke.Parent = WorkoutHud
+
+local WhTitle = Instance.new("TextLabel")
+WhTitle.Name = "Title"
+WhTitle.Size = UDim2.new(1, 0, 0, 26)
+WhTitle.Position = UDim2.new(0, 0, 0, 6)
+WhTitle.BackgroundTransparency = 1
+WhTitle.Text = "💪 BICEP CURL (AUTO-WORKOUT)"
+WhTitle.Font = Enum.Font.GothamBold
+WhTitle.TextSize = 16
+WhTitle.TextColor3 = Color3.fromRGB(255, 190, 60)
+WhTitle.Parent = WorkoutHud
+
+local WhStatus = Instance.new("TextLabel")
+WhStatus.Name = "Status"
+WhStatus.Size = UDim2.new(1, 0, 0, 20)
+WhStatus.Position = UDim2.new(0, 0, 0, 30)
+WhStatus.BackgroundTransparency = 1
+WhStatus.Text = "Reps: 0  •  Reach Gained: +0 Studs"
+WhStatus.Font = Enum.Font.GothamMedium
+WhStatus.TextSize = 13
+WhStatus.TextColor3 = Color3.fromRGB(220, 230, 245)
+WhStatus.Parent = WorkoutHud
+
+local WhProgressBg = Instance.new("Frame")
+WhProgressBg.Name = "ProgressBg"
+WhProgressBg.Size = UDim2.new(1, -28, 0, 8)
+WhProgressBg.Position = UDim2.new(0, 14, 0, 54)
+WhProgressBg.BackgroundColor3 = Color3.fromRGB(38, 42, 54)
+WhProgressBg.BorderSizePixel = 0
+WhProgressBg.Parent = WorkoutHud
+
+local whpCorner = Instance.new("UICorner")
+whpCorner.CornerRadius = UDim.new(0, 4)
+whpCorner.Parent = WhProgressBg
+
+local WhProgressFill = Instance.new("Frame")
+WhProgressFill.Name = "Fill"
+WhProgressFill.Size = UDim2.new(0, 0, 1, 0)
+WhProgressFill.BackgroundColor3 = Color3.fromRGB(255, 140, 40)
+WhProgressFill.BorderSizePixel = 0
+WhProgressFill.Parent = WhProgressBg
+
+local whfCorner = Instance.new("UICorner")
+whfCorner.CornerRadius = UDim.new(0, 4)
+whfCorner.Parent = WhProgressFill
+
+local WhExitBtn = Instance.new("TextButton")
+WhExitBtn.Name = "ExitBtn"
+WhExitBtn.Size = UDim2.new(1, -28, 0, 34)
+WhExitBtn.Position = UDim2.new(0, 14, 0, 68)
+WhExitBtn.BackgroundColor3 = Color3.fromRGB(215, 55, 45)
+WhExitBtn.Text = "STOP WORKOUT [SPACE / WASD / E]"
+WhExitBtn.Font = Enum.Font.GothamBold
+WhExitBtn.TextSize = 13
+WhExitBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+WhExitBtn.Parent = WorkoutHud
+
+local wheCorner = Instance.new("UICorner")
+wheCorner.CornerRadius = UDim.new(0, 8)
+wheCorner.Parent = WhExitBtn
+
+local isWorkingOut = false
+local currentWorkoutThread = nil
+local workoutDumbbells = nil
+local workoutReps = 0
+local activePrompt = nil
+
+local function stopAutoWorkout()
+    if not isWorkingOut then return end
+    isWorkingOut = false
+
+    local char = player.Character
+    if char then
+        local humanoid = char:FindFirstChild("Humanoid")
+        if humanoid then
+            humanoid.WalkSpeed = 16
+            humanoid.JumpPower = 50
+        end
+    end
+
+    if workoutDumbbells then
+        workoutDumbbells:Destroy()
+        workoutDumbbells = nil
+    end
+
+    WorkoutHud.Visible = false
+
+    if activePrompt then
+        activePrompt.ActionText = "Start Auto-Workout (+10 Reach/rep)"
+    end
+
+    if workoutReps > 0 then
+        showNotice("💪 Great set! Completed " .. workoutReps .. " reps (+" .. (workoutReps * 10) .. " Reach)!", Color3.fromRGB(100, 255, 140))
+    else
+        showNotice("Workout stopped.", Color3.fromRGB(200, 200, 200))
+    end
+    updateUI()
+end
+
+WhExitBtn.MouseButton1Click:Connect(stopAutoWorkout)
+
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if not isWorkingOut then return end
+    if gpe then return end
+    if input.KeyCode == Enum.KeyCode.Space
+       or input.KeyCode == Enum.KeyCode.W
+       or input.KeyCode == Enum.KeyCode.A
+       or input.KeyCode == Enum.KeyCode.S
+       or input.KeyCode == Enum.KeyCode.D
+       or input.KeyCode == Enum.KeyCode.E then
+        stopAutoWorkout()
+    end
+end)
+
+UserInputService.JumpRequest:Connect(function()
+    if isWorkingOut then
+        stopAutoWorkout()
+    end
+end)
+
+player.CharacterRemoving:Connect(function()
+    if isWorkingOut then
+        stopAutoWorkout()
+    end
+end)
+
+local function startAutoWorkout(station, prompt)
+    if isWorkingOut then
+        stopAutoWorkout()
+        return
+    end
+
+    local char = player.Character
+    if not char then return end
+    local humanoid = char:FindFirstChild("Humanoid")
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not (humanoid and hrp) then return end
+
+    -- Locate joints
+    local re = getArmJoint(char, "RightLowerArm", "RightElbow")
+    local rs = getArmJoint(char, "RightUpperArm", "RightShoulder")
+    local le = getArmJoint(char, "LeftLowerArm", "LeftElbow")
+    local ls = getArmJoint(char, "LeftUpperArm", "LeftShoulder")
+    local r6R = getArmJoint(char, "Torso", "Right Shoulder")
+    local r6L = getArmJoint(char, "Torso", "Left Shoulder")
+
+    local origRE = re and (re:IsA("AnimationConstraint") and re.Attachment0.CFrame or re.C0)
+    local origRS = rs and (rs:IsA("AnimationConstraint") and rs.Attachment0.CFrame or rs.C0)
+    local origLE = le and (le:IsA("AnimationConstraint") and le.Attachment0.CFrame or le.C0)
+    local origLS = ls and (ls:IsA("AnimationConstraint") and ls.Attachment0.CFrame or ls.C0)
+    local origR6R = r6R and r6R.C0
+    local origR6L = r6L and r6L.C0
+
+    -- Position on curl seat facing arm pad
+    if station then
+        local seat = station:FindFirstChild("CurlSeat")
+        local armPad = station:FindFirstChild("ArmPad")
+        if seat and armPad then
+            local look = (armPad.Position - seat.Position) * Vector3.new(1, 0, 1)
+            if look.Magnitude > 0 then
+                hrp.CFrame = CFrame.new(seat.Position + Vector3.new(0, 1.5, 0), seat.Position + Vector3.new(0, 1.5, 0) + look.Unit)
+            end
+        end
+    end
+
+    humanoid.WalkSpeed = 0
+    workoutDumbbells = createWorkoutDumbbells(char)
+    workoutReps = 0
+    activePrompt = prompt
+    if activePrompt then
+        activePrompt.ActionText = "Stop Workout"
+    end
+
+    WorkoutHud.Visible = true
+    WhStatus.Text = "Reps: 0  •  Reach Gained: +0 Studs"
+    WhProgressFill.Size = UDim2.new(0, 0, 1, 0)
+    isWorkingOut = true
+
+    showNotice("💪 Auto-Workout Started! Curling dumbbells...", Color3.fromRGB(255, 170, 50))
+
+    currentWorkoutThread = task.spawn(function()
+        while isWorkingOut do
+            -- Phase 1: Curl Up (0.55s)
+            local t0 = os.clock()
+            while isWorkingOut and (os.clock() - t0) < 0.55 do
+                local p = math.clamp((os.clock() - t0) / 0.55, 0, 1)
+                local eased = math.sin(p * (math.pi / 2))
+                WhProgressFill.Size = UDim2.new(eased * 0.7, 0, 1, 0)
+
+                local curlAngle = math.rad(115 * eased)
+                local shoulderAngle = math.rad(25 * eased)
+
+                if re then
+                    if re:IsA("AnimationConstraint") then
+                        re.Attachment0.CFrame = origRE * CFrame.Angles(curlAngle, 0, 0)
+                        rs.Attachment0.CFrame = origRS * CFrame.Angles(shoulderAngle, 0, 0)
+                        le.Attachment0.CFrame = origLE * CFrame.Angles(curlAngle, 0, 0)
+                        ls.Attachment0.CFrame = origLS * CFrame.Angles(shoulderAngle, 0, 0)
+                    else
+                        re.C0 = origRE * CFrame.Angles(curlAngle, 0, 0)
+                        rs.C0 = origRS * CFrame.Angles(shoulderAngle, 0, 0)
+                        le.C0 = origLE * CFrame.Angles(curlAngle, 0, 0)
+                        ls.C0 = origLS * CFrame.Angles(shoulderAngle, 0, 0)
+                    end
+                elseif r6R and r6L then
+                    r6R.C0 = origR6R * CFrame.Angles(curlAngle, 0, 0)
+                    r6L.C0 = origR6L * CFrame.Angles(curlAngle, 0, 0)
+                end
+
+                task.wait(0.03)
+            end
+
+            if not isWorkingOut then break end
+
+            -- Phase 2: Peak squeeze (0.15s)
+            WhProgressFill.Size = UDim2.new(0.8, 0, 1, 0)
+            task.wait(0.15)
+
+            if not isWorkingOut then break end
+
+            -- Phase 3: Lower Down (0.60s)
+            local t1 = os.clock()
+            while isWorkingOut and (os.clock() - t1) < 0.60 do
+                local p = math.clamp((os.clock() - t1) / 0.60, 0, 1)
+                local eased = 1 - math.sin(p * (math.pi / 2))
+                WhProgressFill.Size = UDim2.new(0.8 + (1 - eased) * 0.2, 0, 1, 0)
+
+                local curlAngle = math.rad(115 * eased)
+                local shoulderAngle = math.rad(25 * eased)
+
+                if re then
+                    if re:IsA("AnimationConstraint") then
+                        re.Attachment0.CFrame = origRE * CFrame.Angles(curlAngle, 0, 0)
+                        rs.Attachment0.CFrame = origRS * CFrame.Angles(shoulderAngle, 0, 0)
+                        le.Attachment0.CFrame = origLE * CFrame.Angles(curlAngle, 0, 0)
+                        ls.Attachment0.CFrame = origLS * CFrame.Angles(shoulderAngle, 0, 0)
+                    else
+                        re.C0 = origRE * CFrame.Angles(curlAngle, 0, 0)
+                        rs.C0 = origRS * CFrame.Angles(shoulderAngle, 0, 0)
+                        le.C0 = origLE * CFrame.Angles(curlAngle, 0, 0)
+                        ls.C0 = origLS * CFrame.Angles(shoulderAngle, 0, 0)
+                    end
+                elseif r6R and r6L then
+                    r6R.C0 = origR6R * CFrame.Angles(curlAngle, 0, 0)
+                    r6L.C0 = origR6L * CFrame.Angles(curlAngle, 0, 0)
+                end
+
+                task.wait(0.03)
+            end
+
+            if not isWorkingOut then break end
+
+            -- REPETITION COMPLETE!
+            workoutReps += 1
+            WhProgressFill.Size = UDim2.new(1, 0, 1, 0)
+
+            -- Award Strength via Server
+            local res = TrainStrengthRemote:InvokeServer()
+            if res and res.Success then
+                spawnFloatingText("💪 +10 REACH! (Rep " .. workoutReps .. ")", Color3.fromRGB(255, 175, 40))
+                WhStatus.Text = "Reps: " .. workoutReps .. "  •  Reach Gained: +" .. (workoutReps * 10) .. " Studs"
+                updateUI()
+            else
+                showNotice(res and res.Message or "Pacing rest...", Color3.fromRGB(255, 140, 100))
+            end
+
+            task.wait(0.05)
+            WhProgressFill.Size = UDim2.new(0, 0, 1, 0)
+        end
+
+        -- Clean joint reset on finish
+        if re then
+            if re:IsA("AnimationConstraint") then
+                re.Attachment0.CFrame = origRE
+                rs.Attachment0.CFrame = origRS
+                le.Attachment0.CFrame = origLE
+                ls.Attachment0.CFrame = origLS
+            else
+                re.C0 = origRE
+                rs.C0 = origRS
+                le.C0 = origLE
+                ls.C0 = origLS
+            end
+        elseif r6R and r6L then
+            r6R.C0 = origR6R
+            r6L.C0 = origR6L
+        end
+    end)
+end
+
+-- Connect in-world ProximityPrompts for Bicep Curl Station
+local ProximityPromptService = game:GetService("ProximityPromptService")
+ProximityPromptService.PromptTriggered:Connect(function(prompt, inputPlayer)
+    if inputPlayer ~= player then return end
+    if prompt.ObjectText == "Bicep Curl Station" or (prompt.Parent and prompt.Parent.Parent and prompt.Parent.Parent.Name == "BicepCurlStation") then
+        if isWorkingOut then
+            stopAutoWorkout()
+        else
+            local station = prompt.Parent and prompt.Parent.Parent
+            startAutoWorkout(station, prompt)
+        end
+    end
+end)
+
+-- Gym Navigation Button on HUD
+GymNavBtn.MouseButton1Click:Connect(function()
+    if isWorkingOut then
+        stopAutoWorkout()
+        return
+    end
+
+    local char = player.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    local bases = Workspace:FindFirstChild("EggSanctuaryMap") and Workspace.EggSanctuaryMap:FindFirstChild("MultiplayerBases")
+    local nearestStation = nil
+    local nearestPrompt = nil
+    local nearestDist = 9999
+    if bases then
+        for _, b in ipairs(bases:GetChildren()) do
+            local s = b:FindFirstChild("BicepCurlStation")
+            if s and s:FindFirstChild("InteractPart") then
+                local dist = (hrp.Position - s.InteractPart.Position).Magnitude
+                if dist < nearestDist then
+                    nearestDist = dist
+                    nearestStation = s
+                    nearestPrompt = s.InteractPart:FindFirstChildOfClass("ProximityPrompt")
+                end
+            end
+        end
+    end
+
+    if nearestStation and nearestDist <= 22 then
+        startAutoWorkout(nearestStation, nearestPrompt)
+    else
+        showNotice("Walk over to the Bicep Curl Station in your plot to auto-train!", Color3.fromRGB(255, 180, 100))
+    end
+end)
 
 -- Connect Dumbbell Tool in backpack and character
 local function setupDumbbell(t)
     if t:IsA("Tool") and t.Name == "Dumbbell" then
-        t.Activated:Connect(performBicepCurl)
+        t.Activated:Connect(function()
+            if isWorkingOut then
+                stopAutoWorkout()
+                return
+            end
+
+            local char = player.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if not hrp then return end
+
+            local bases = Workspace:FindFirstChild("EggSanctuaryMap") and Workspace.EggSanctuaryMap:FindFirstChild("MultiplayerBases")
+            local nearestStation = nil
+            local nearestPrompt = nil
+            local nearestDist = 9999
+            if bases then
+                for _, b in ipairs(bases:GetChildren()) do
+                    local s = b:FindFirstChild("BicepCurlStation")
+                    if s and s:FindFirstChild("InteractPart") then
+                        local dist = (hrp.Position - s.InteractPart.Position).Magnitude
+                        if dist < nearestDist then
+                            nearestDist = dist
+                            nearestStation = s
+                            nearestPrompt = s.InteractPart:FindFirstChildOfClass("ProximityPrompt")
+                        end
+                    end
+                end
+            end
+
+            if nearestStation and nearestDist <= 22 then
+                startAutoWorkout(nearestStation, nearestPrompt)
+            else
+                showNotice("Go to the Bicep Curl Station to start your automated workout!", Color3.fromRGB(255, 180, 100))
+            end
+        end)
     end
 end
 

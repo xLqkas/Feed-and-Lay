@@ -424,11 +424,41 @@ task.spawn(function()
 end)
 
 -----------------------------------------------------
--- 1. GYM: BICEP CURL TRAINING (Anti-Autoclicker Cooldown)
+-- 1. GYM: BICEP CURL TRAINING (Automated Repetitions & Anti-Cheat)
 -----------------------------------------------------
 local function doTrainStrength(player)
     local data = PlayerData[player.UserId]
     if not data then return { Success = false, Message = "No data" } end
+
+    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return { Success = false, Message = "Character not found" } end
+
+    -- Verify player is near their Bicep Curl Station (Anti-Teleport / Remote Exploit)
+    local isNearGym = false
+    local plotId = AssignedPlots[player.UserId]
+    local bases = Workspace:FindFirstChild("EggSanctuaryMap") and Workspace.EggSanctuaryMap:FindFirstChild("MultiplayerBases")
+    if bases then
+        local base = plotId and bases:FindFirstChild("PlayerBase_" .. plotId)
+        local gym = base and (base:FindFirstChild("BicepCurlStation") or base:FindFirstChild("GymTreadmill"))
+        if gym and gym:FindFirstChild("InteractPart") then
+            if (hrp.Position - gym.InteractPart.Position).Magnitude <= 20 then
+                isNearGym = true
+            end
+        end
+        if not isNearGym then
+            for _, b in ipairs(bases:GetChildren()) do
+                local g = b:FindFirstChild("BicepCurlStation") or b:FindFirstChild("GymTreadmill")
+                if g and g:FindFirstChild("InteractPart") and (hrp.Position - g.InteractPart.Position).Magnitude <= 20 then
+                    isNearGym = true
+                    break
+                end
+            end
+        end
+    end
+
+    if not isNearGym then
+        return { Success = false, Message = "You must be at the Bicep Curl Station to train!" }
+    end
 
     local now = os.clock()
     if data.LastTrainTime and (now - data.LastTrainTime) < GameConfig.TrainCooldown then
@@ -441,7 +471,6 @@ local function doTrainStrength(player)
         player.leaderstats.Strength.Value = data.Strength
     end
 
-    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
     SoundHelper.Play("GymWorkout", hrp)
 
     return {
@@ -818,7 +847,7 @@ task.spawn(function()
     end
 end)
 
--- Bind in-world ProximityPrompts for all plots
+-- Configure in-world ProximityPrompts for all plots
 local function bindAllPrompts()
     local bases = Workspace:FindFirstChild("EggSanctuaryMap") and Workspace.EggSanctuaryMap:FindFirstChild("MultiplayerBases")
     if not bases then return end
@@ -828,9 +857,11 @@ local function bindAllPrompts()
         if gym then
             for _, desc in ipairs(gym:GetDescendants()) do
                 if desc:IsA("ProximityPrompt") then
-                    desc.Triggered:Connect(function(player)
-                        doTrainStrength(player)
-                    end)
+                    desc.ObjectText = "Bicep Curl Station"
+                    desc.ActionText = "Start Auto-Workout (+10 Reach/rep)"
+                    desc.HoldDuration = 0
+                    desc.MaxActivationDistance = 14
+                    desc.RequiresLineOfSight = false
                 end
             end
         end

@@ -169,6 +169,6 @@ GameConfig.SlotUpgradeCost = function(currentSlots)
     return (currentSlots or 4) * 500
 end
 GameConfig.ThrowCooldown = 1.8
-GameConfig.TrainCooldown = 0.5
+GameConfig.TrainCooldown = 1.15
 
 return GameConfig

@@ -4,6 +4,7 @@ local Workspace = game:GetService("Workspace")
 local TweenService = game:GetService("TweenService")
 local HttpService = game:GetService("HttpService")
 local DataStoreService = game:GetService("DataStoreService")
+local RunService = game:GetService("RunService")
 
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
@@ -262,7 +263,23 @@ local function setupPlayer(player)
         local success, saved = pcall(function()
             return PlayerDataStore:GetAsync(key)
         end)
-        if success and saved and type(saved) == "table" then
+
+        -- Player left while we were loading: free the plot and stop.
+        if not player.Parent then
+            AssignedPlots[player.UserId] = nil
+            return
+        end
+
+        if not success then
+            warn("[EggSanctuary] Load failed for " .. player.UserId .. ": " .. tostring(saved))
+            -- Never save over the real data with starter data.
+            defaultData.LoadFailed = true
+            if not RunService:IsStudio() then
+                AssignedPlots[player.UserId] = nil
+                player:Kick("Could not load your save. Please rejoin in a moment.")
+                return
+            end
+        elseif saved and type(saved) == "table" then
             defaultData.Strength = saved.Strength or defaultData.Strength
             defaultData.BioEssence = saved.BioEssence or defaultData.BioEssence
             defaultData.FoodTier = saved.FoodTier or defaultData.FoodTier
@@ -333,11 +350,11 @@ end
 
 local function savePlayerData(player)
     local data = PlayerData[player.UserId]
-    if not data then return end
+    if not data or data.LoadFailed then return end
 
     if isDataStoreActive and PlayerDataStore then
         local key = "Player_" .. player.UserId
-        pcall(function()
+        local ok, err = pcall(function()
             PlayerDataStore:SetAsync(key, {
                 Strength = data.Strength,
                 BioEssence = data.BioEssence,
@@ -347,6 +364,9 @@ local function savePlayerData(player)
                 GardenPets = data.GardenPets,
             })
         end)
+        if not ok then
+            warn("[EggSanctuary] Save failed for " .. player.UserId .. ": " .. tostring(err))
+        end
     end
 end
 
@@ -367,6 +387,13 @@ Players.PlayerRemoving:Connect(function(player)
 
     AssignedPlots[player.UserId] = nil
     PlayerData[player.UserId] = nil
+end)
+
+-- Save everyone when Roblox shuts the server down (updates, last player leaving).
+game:BindToClose(function()
+    for _, player in ipairs(Players:GetPlayers()) do
+        savePlayerData(player)
+    end
 end)
 
 -- Autosave loop every 45s

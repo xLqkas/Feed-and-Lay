@@ -1,6 +1,6 @@
 # Code Audit — Egg Sanctuary (Feed-and-Lay)
 
-**Date:** 2026-11-17 (third pass) · **Branch:** `fix/anti-cheat` (on top of `fix/save-safety`, PR #1) · **Scope:** whole repo (`src/`, `default.project.json`, `build_gdd.py`, docs)
+**Date:** 2026-11-17 (third pass) · **Branch:** `fix/anti-cheat` (on top of `main`, which has the merged PR #1) · **Scope:** whole repo (`src/`, `default.project.json`, `build_gdd.py`, docs)
 **Tests in repo:** none · **Code changed by this audit:** none
 
 ---
@@ -140,7 +140,7 @@ Smaller items left out: 3 (big numbers not formatted, the current egg is not sav
 
 ---
 
-**Verdict:** Saves and the main cheats are handled (once PR #1 and the anti-cheat PR merge). Still not ready for public players: fix the plot bugs (#2, #3) and the pet cap (#1) next, then the one-liners #4 and #11.
+**Verdict:** Saves are handled (PR #1, merged) and the main cheats are handled once the anti-cheat PR merges. Still not ready for public players: fix the plot bugs (#2, #3) and the pet cap (#1) next, then the one-liners #4 and #11.
 
 **Lean:** -~45 lines of Luau possible (dead code + merged copies in #14), plus -1,393 lines if the GDD build script and its HTML output go (#13). -0 dependencies (there are none).
 

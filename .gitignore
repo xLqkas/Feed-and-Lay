@@ -1,0 +1,16 @@
+# Roblox Studio & Rojo
+*.rbxl.lock
+*.rbxmx.lock
+*.tmp
+.rojo/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDEs
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace

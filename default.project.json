@@ -1,0 +1,32 @@
+{
+  "name": "EggSanctuary",
+  "tree": {
+    "$className": "DataModel",
+    "ServerScriptService": {
+      "EggSanctuaryServer": {
+        "$className": "Folder",
+        "MainGameServer": {
+          "$path": "src/server/MainGameServer.server.luau"
+        }
+      }
+    },
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "EggSanctuaryClient": {
+          "$path": "src/client/EggSanctuaryClient.client.luau"
+        }
+      }
+    },
+    "ReplicatedStorage": {
+      "Modules": {
+        "$className": "Folder",
+        "GameConfig": {
+          "$path": "src/shared/GameConfig.luau"
+        },
+        "SoundHelper": {
+          "$path": "src/shared/SoundHelper.luau"
+        }
+      }
+    }
+  }
+}

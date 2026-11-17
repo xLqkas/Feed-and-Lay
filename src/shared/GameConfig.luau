@@ -171,4 +171,122 @@ end
 GameConfig.ThrowCooldown = 1.8
 GameConfig.TrainCooldown = 1.15
 
+-----------------------------------------------------
+-- 3D EGG RESTORATION & DIRT CRUST CONFIGURATIONS
+-----------------------------------------------------
+GameConfig.TotalEggChunks = 30 -- 30 spatial 3D rock/mud crust segments encasing the egg
+
+GameConfig.EggCrusts = {
+    [1] = { -- Dewdrop Meadow
+        CrustName = "Meadow Soil & Moss",
+        ChunkColor = Color3.fromRGB(68, 48, 28),
+        ChunkMaterial = Enum.Material.Slate,
+        DetailMaterial = Enum.Material.Grass,
+        ParticleColor = Color3.fromRGB(95, 65, 38),
+        ChunkHP = 40,
+        EggCoreColor = Color3.fromRGB(155, 235, 165),
+        EggCoreMaterial = Enum.Material.SmoothPlastic,
+        PatternName = "Floral Sprout",
+    },
+    [2] = { -- Toxic Slime Marsh
+        CrustName = "Toxic Slime & Algae",
+        ChunkColor = Color3.fromRGB(48, 72, 38),
+        ChunkMaterial = Enum.Material.Grass,
+        DetailMaterial = Enum.Material.Mud,
+        ParticleColor = Color3.fromRGB(85, 210, 75),
+        ChunkHP = 75,
+        EggCoreColor = Color3.fromRGB(80, 230, 140),
+        EggCoreMaterial = Enum.Material.Glass,
+        PatternName = "Emerald Core",
+    },
+    [3] = { -- Cinder Volcano
+        CrustName = "Obsidian Basalt & Ash",
+        ChunkColor = Color3.fromRGB(32, 30, 32),
+        ChunkMaterial = Enum.Material.Basalt,
+        DetailMaterial = Enum.Material.Slate,
+        ParticleColor = Color3.fromRGB(55, 48, 48),
+        ChunkHP = 120,
+        EggCoreColor = Color3.fromRGB(30, 24, 28),
+        EggCoreMaterial = Enum.Material.Neon, -- Glowing lava cracks!
+        PatternName = "Magma Vein",
+    },
+    [4] = { -- Sunken Coral Reef
+        CrustName = "Calcified Barnacle Crust",
+        ChunkColor = Color3.fromRGB(182, 162, 132),
+        ChunkMaterial = Enum.Material.Sandstone,
+        DetailMaterial = Enum.Material.Salt,
+        ParticleColor = Color3.fromRGB(205, 185, 155),
+        ChunkHP = 175,
+        EggCoreColor = Color3.fromRGB(120, 225, 255),
+        EggCoreMaterial = Enum.Material.SmoothPlastic,
+        PatternName = "Reef Pearl",
+    },
+    [5] = { -- Celestial Galaxy
+        CrustName = "Cosmic Meteorite Crust",
+        ChunkColor = Color3.fromRGB(42, 32, 58),
+        ChunkMaterial = Enum.Material.Slate,
+        DetailMaterial = Enum.Material.Glass,
+        ParticleColor = Color3.fromRGB(185, 110, 255),
+        ChunkHP = 240,
+        EggCoreColor = Color3.fromRGB(210, 150, 255),
+        EggCoreMaterial = Enum.Material.Neon,
+        PatternName = "Nebula Starlight",
+    },
+}
+
+-----------------------------------------------------
+-- POWER WASHER UPGRADE PROGRESSIONS
+-----------------------------------------------------
+GameConfig.CleanerUpgrades = {
+    PSI = {
+        [1] = { Level = 1, Name = "100 PSI (Standard)", DamageRate = 25, Cost = 0 },
+        [2] = { Level = 2, Name = "180 PSI (Boosted)", DamageRate = 45, Cost = 100 },
+        [3] = { Level = 3, Name = "280 PSI (High Pressure)", DamageRate = 75, Cost = 500 },
+        [4] = { Level = 4, Name = "420 PSI (Industrial)", DamageRate = 120, Cost = 2500 },
+        [5] = { Level = 5, Name = "600 PSI (Hydro-Max)", DamageRate = 180, Cost = 12000 },
+    },
+    Width = {
+        [1] = { Level = 1, Name = "Needle Jet", Radius = 1.6, Cost = 0 },
+        [2] = { Level = 2, Name = "Narrow Fan", Radius = 2.4, Cost = 150 },
+        [3] = { Level = 3, Name = "Medium Fan", Radius = 3.2, Cost = 750 },
+        [4] = { Level = 4, Name = "Wide Flare", Radius = 4.2, Cost = 3500 },
+        [5] = { Level = 5, Name = "Turbo Cyclone", Radius = 5.5, Cost = 15000 },
+    },
+    Tier = {
+        [1] = { Tier = 1, Name = "Plastic Garden Wand", Color = Color3.fromRGB(50, 160, 220), Material = Enum.Material.SmoothPlastic, Cost = 0 },
+        [2] = { Tier = 2, Name = "Brass Pressure Wand", Color = Color3.fromRGB(225, 180, 50), Material = Enum.Material.Metal, Cost = 300 },
+        [3] = { Tier = 3, Name = "Chrome Hydro-Blaster", Color = Color3.fromRGB(215, 225, 245), Material = Enum.Material.Metal, Cost = 1500 },
+        [4] = { Tier = 4, Name = "Quantum Restorer", Color = Color3.fromRGB(160, 100, 255), Material = Enum.Material.Neon, Cost = 8000 },
+    },
+}
+
+-- Calculate next Zone milestone from current strength
+function GameConfig.GetNextZoneMilestone(strength)
+    strength = tonumber(strength) or 150
+    for i = 1, #GameConfig.Zones do
+        local z = GameConfig.Zones[i]
+        if strength < z.MaxDist then
+            local needed = z.MaxDist - strength
+            local repsNeeded = math.ceil(needed / 10)
+            local nextZone = GameConfig.Zones[i + 1]
+            if nextZone then
+                return {
+                    CurrentZone = z,
+                    NextZone = nextZone,
+                    DistNeeded = needed,
+                    RepsNeeded = repsNeeded,
+                    IsMax = false,
+                }
+            end
+        end
+    end
+    return {
+        CurrentZone = GameConfig.Zones[#GameConfig.Zones],
+        NextZone = nil,
+        DistNeeded = 0,
+        RepsNeeded = 0,
+        IsMax = true,
+    }
+end
+
 return GameConfig

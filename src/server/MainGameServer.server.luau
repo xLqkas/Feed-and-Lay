@@ -36,6 +36,7 @@ local UpgradeFoodRemote = getOrCreateRemoteFunction("UpgradeFood")
 local ExpandSanctuaryRemote = getOrCreateRemoteFunction("ExpandSanctuary")
 local ManagePetRemote = getOrCreateRemoteFunction("ManagePet")
 local GetSanctuaryStateRemote = getOrCreateRemoteFunction("GetSanctuaryState")
+local UpgradeCleanerRemote = getOrCreateRemoteFunction("UpgradeCleaner")
 
 -- 2. DataStore Setup
 local DATASTORE_KEY = "EggSanctuary_SaveData_v6"
@@ -238,6 +239,11 @@ local function setupPlayer(player)
         MaxSlots = GameConfig.DefaultMaxSlots or 4,
         GardenPets = {},
         CurrentEgg = nil,
+        CleanerUpgrades = {
+            PSILevel = 1,
+            WidthLevel = 1,
+            Tier = 1,
+        },
         LastThrowTime = 0,
         LastTrainTime = 0,
         ChargeStartTime = nil,
@@ -273,6 +279,7 @@ local function setupPlayer(player)
             defaultData.EggsCleaned = saved.EggsCleaned or defaultData.EggsCleaned
             defaultData.MaxSlots = saved.MaxSlots or defaultData.MaxSlots
             defaultData.GardenPets = saved.GardenPets or defaultData.GardenPets
+            defaultData.CleanerUpgrades = saved.CleanerUpgrades or defaultData.CleanerUpgrades
         end
     end
 
@@ -377,6 +384,7 @@ local function savePlayerData(player)
                     EggsCleaned = data.EggsCleaned,
                     MaxSlots = data.MaxSlots,
                     GardenPets = data.GardenPets,
+                    CleanerUpgrades = data.CleanerUpgrades,
                     LastSaveTime = os.time(),
                 }
             end)
@@ -593,7 +601,7 @@ local function isNearEggCleaner(player)
     return dist <= 24, dist
 end
 
-CleanEggRemote.OnServerInvoke = function(player)
+CleanEggRemote.OnServerInvoke = function(player, chunkIndex, clientCleanliness)
     local data = PlayerData[player.UserId]
     if not data or not data.CurrentEgg then
         return { Success = false, Message = "No egg in cleaner! Feed the monster down the canyon first." }
@@ -605,15 +613,22 @@ CleanEggRemote.OnServerInvoke = function(player)
     end
 
     local egg = data.CurrentEgg
-    egg.Cleanliness = math.min(100, egg.Cleanliness + 25)
+    local totalChunks = GameConfig.TotalEggChunks or 30
+
+    if clientCleanliness ~= nil then
+        local targetClean = math.clamp(math.floor(tonumber(clientCleanliness) or 0), 0, 100)
+        if targetClean > egg.Cleanliness then
+            egg.Cleanliness = targetClean
+        end
+    else
+        egg.Cleanliness = math.min(100, egg.Cleanliness + math.ceil(100 / totalChunks))
+    end
 
     updateSanctuaryWorldVisuals(player)
 
     local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
     if egg.Cleanliness >= 100 then
         SoundHelper.Play("PristineChime", hrp)
-    else
-        SoundHelper.Play("WaterSpray", hrp)
     end
 
     return {
@@ -797,7 +812,99 @@ UpgradeFoodRemote.OnServerInvoke = function(player)
 end
 
 -----------------------------------------------------
--- 9. GET SANCTUARY STATE (Issue 8 Fix)
+-- 9. POWER WASHER & CLEANER UPGRADES
+-----------------------------------------------------
+UpgradeCleanerRemote.OnServerInvoke = function(player, category)
+    local data = PlayerData[player.UserId]
+    if not data then return { Success = false, Message = "No data" } end
+
+    data.CleanerUpgrades = data.CleanerUpgrades or { PSILevel = 1, WidthLevel = 1, Tier = 1 }
+
+    if category == "PSI" then
+        local currentLvl = data.CleanerUpgrades.PSILevel or 1
+        local nextConfig = GameConfig.CleanerUpgrades.PSI[currentLvl + 1]
+        if not nextConfig then
+            return { Success = false, Message = "Pressure (PSI) is already at maximum level!" }
+        end
+        if data.BioEssence < nextConfig.Cost then
+            return { Success = false, Message = "Not enough Bio-Essence! Need " .. nextConfig.Cost .. " $" }
+        end
+        data.BioEssence = data.BioEssence - nextConfig.Cost
+        data.CleanerUpgrades.PSILevel = currentLvl + 1
+
+        if player:FindFirstChild("leaderstats") and player.leaderstats:FindFirstChild("BioEssence") then
+            player.leaderstats.BioEssence.Value = data.BioEssence
+        end
+        savePlayerData(player)
+        local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+        SoundHelper.Play("PristineChime", hrp)
+        return {
+            Success = true,
+            Category = "PSI",
+            NewLevel = data.CleanerUpgrades.PSILevel,
+            Config = nextConfig,
+            NewEssence = data.BioEssence,
+            Message = "Upgraded to " .. nextConfig.Name .. "!",
+        }
+    elseif category == "Width" then
+        local currentLvl = data.CleanerUpgrades.WidthLevel or 1
+        local nextConfig = GameConfig.CleanerUpgrades.Width[currentLvl + 1]
+        if not nextConfig then
+            return { Success = false, Message = "Spray Nozzle is already at maximum width!" }
+        end
+        if data.BioEssence < nextConfig.Cost then
+            return { Success = false, Message = "Not enough Bio-Essence! Need " .. nextConfig.Cost .. " $" }
+        end
+        data.BioEssence = data.BioEssence - nextConfig.Cost
+        data.CleanerUpgrades.WidthLevel = currentLvl + 1
+
+        if player:FindFirstChild("leaderstats") and player.leaderstats:FindFirstChild("BioEssence") then
+            player.leaderstats.BioEssence.Value = data.BioEssence
+        end
+        savePlayerData(player)
+        local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+        SoundHelper.Play("PristineChime", hrp)
+        return {
+            Success = true,
+            Category = "Width",
+            NewLevel = data.CleanerUpgrades.WidthLevel,
+            Config = nextConfig,
+            NewEssence = data.BioEssence,
+            Message = "Upgraded to " .. nextConfig.Name .. "!",
+        }
+    elseif category == "Tier" then
+        local currentTier = data.CleanerUpgrades.Tier or 1
+        local nextConfig = GameConfig.CleanerUpgrades.Tier[currentTier + 1]
+        if not nextConfig then
+            return { Success = false, Message = "Washer hardware is already at maximum tier!" }
+        end
+        if data.BioEssence < nextConfig.Cost then
+            return { Success = false, Message = "Not enough Bio-Essence! Need " .. nextConfig.Cost .. " $" }
+        end
+        data.BioEssence = data.BioEssence - nextConfig.Cost
+        data.CleanerUpgrades.Tier = currentTier + 1
+
+        if player:FindFirstChild("leaderstats") and player.leaderstats:FindFirstChild("BioEssence") then
+            player.leaderstats.BioEssence.Value = data.BioEssence
+        end
+        savePlayerData(player)
+        local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+        SoundHelper.Play("PristineChime", hrp)
+        return {
+            Success = true,
+            Category = "Tier",
+            NewTier = data.CleanerUpgrades.Tier,
+            Config = nextConfig,
+            NewEssence = data.BioEssence,
+            Message = "Unlocked " .. nextConfig.Name .. "!",
+        }
+    end
+
+    return { Success = false, Message = "Invalid upgrade category" }
+end
+
+-----------------------------------------------------
+-- 10. GET SANCTUARY STATE (Issue 8 Fix)
 -----------------------------------------------------
 GetSanctuaryStateRemote.OnServerInvoke = function(player)
     local plotId = AssignedPlots[player.UserId] or 1
@@ -811,6 +918,7 @@ GetSanctuaryStateRemote.OnServerInvoke = function(player)
             BioEssence = 0,
             FoodTier = 1,
             PlotId = plotId,
+            CleanerUpgrades = { PSILevel = 1, WidthLevel = 1, Tier = 1 },
         }
     end
 
@@ -822,6 +930,8 @@ GetSanctuaryStateRemote.OnServerInvoke = function(player)
         FoodTier = data.FoodTier,
         HasEgg = (data.CurrentEgg ~= nil),
         EggCleanliness = data.CurrentEgg and data.CurrentEgg.Cleanliness or 0,
+        CurrentEgg = data.CurrentEgg,
+        CleanerUpgrades = data.CleanerUpgrades or { PSILevel = 1, WidthLevel = 1, Tier = 1 },
         PlotId = plotId,
     }
 end

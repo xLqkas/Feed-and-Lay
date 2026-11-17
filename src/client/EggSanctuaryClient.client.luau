@@ -91,11 +91,10 @@ local function bindPlotPrompts()
     local basin = cleaner and cleaner:FindFirstChild("WashBasin")
     local prompt = basin and basin:FindFirstChildOfClass("ProximityPrompt")
     if prompt then
+        prompt.ActionText = "Inspect & Power Wash Egg"
+        prompt.ObjectText = "Egg Cleaner"
         prompt.Triggered:Connect(function()
-            if hasEggInCleaner then
-                resetWashModal()
-                WashModal.Visible = true
-            else
+            if not hasEggInCleaner then
                 showNotice("No egg in cleaner! Walk to the Launch Pad to throw food and attract a creature!", Color3.fromRGB(255, 200, 100))
             end
         end)
@@ -1200,8 +1199,16 @@ local function startAutoWorkout(station, prompt)
             -- Award Strength via Server
             local res = TrainStrengthRemote:InvokeServer()
             if res and res.Success then
+                local newStr = res.NewStrength or 160
+                local milestone = GameConfig.GetNextZoneMilestone(newStr)
+                local milestoneText = ""
+                if not milestone.IsMax and milestone.NextZone then
+                    milestoneText = "  •  " .. milestone.RepsNeeded .. " reps to " .. milestone.NextZone.Name .. "!"
+                else
+                    milestoneText = "  •  MAX ZONE UNLOCKED!"
+                end
                 spawnFloatingText("💪 +10 REACH! (Rep " .. workoutReps .. ")", Color3.fromRGB(255, 175, 40))
-                WhStatus.Text = "Reps: " .. workoutReps .. "  •  Reach Gained: +" .. (workoutReps * 10) .. " Studs"
+                WhStatus.Text = "Reps: " .. workoutReps .. "  •  Reach: " .. newStr .. " Studs" .. milestoneText
                 updateUI()
             else
                 showNotice(res and res.Message or "Pacing rest...", Color3.fromRGB(255, 140, 100))

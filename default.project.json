@@ -17,6 +17,9 @@
         },
         "PetShowcaseAnimator": {
           "$path": "src/client/PetShowcaseAnimator.client.luau"
+        },
+        "EggRestoration3D": {
+          "$path": "src/client/EggRestoration3D.client.luau"
         }
       }
     },

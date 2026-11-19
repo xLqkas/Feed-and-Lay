@@ -80,14 +80,18 @@ local function burst(card: Hud.Card, r: any, at: Vector3, big: boolean)
     card.rarity.Text = string.upper(r.rarity)
     card.rarity.TextColor3 = color
     card.name.Text = r.species
-    card.mutation.Text = if r.mutation ~= "Normal" then string.upper(r.mutation) else ""
+    card.mutation.Text = if r.mutation ~= "Normal"
+        then string.upper(r.mutation)
+        elseif r.gift then "MAMA HEN'S GIFT"
+        else ""
     card.income.Text = "+" .. Logic.formatNumber(r.income) .. "/s"
     local edge = card.frame:FindFirstChild("Edge") :: UIStroke?
     if edge then
         edge.Color = color
     end
     Hud.revealLand(card, r.firstOfSpecies == true)
-    local rank = table.find(Economy.RarityOrder, r.rarity) or 1
+    -- the scripted first-time gift egg (server flag) gets the biggest reveal: confetti, top fanfare, FOV punch
+    local rank = math.max(table.find(Economy.RarityOrder, r.rarity) or 1, if r.gift then 5 else 1)
     Fx.burst(at, color, if big then 30 else 14, 14, 0.6, 0.8)
     if big and rank >= 5 then
         for _, c in { Color3.fromRGB(255, 80, 80), Color3.fromRGB(80, 200, 255), Color3.fromRGB(255, 220, 60) } do

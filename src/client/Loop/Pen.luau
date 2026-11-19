@@ -118,6 +118,30 @@ function Pen.makePet(species: string, mutation: string, rarity: string): Model
     return model
 end
 
+-- Puts a pet model in a ViewportFrame, framed by its bounding box (Book cards, next-creature card)
+function Pen.viewport(vp: ViewportFrame, species: string, rarity: string)
+    vp:ClearAllChildren()
+    local model = Pen.makePet(species, "Normal", rarity)
+    local tag = model:FindFirstChild("Tag", true)
+    if tag then
+        tag:Destroy()
+    end
+    for _, d in model:GetDescendants() do
+        if d:IsA("ParticleEmitter") or d:IsA("Sparkles") then
+            d:Destroy()
+        end
+    end
+    model:PivotTo(CFrame.Angles(0, math.rad(200), 0))
+    model.Parent = vp
+    local cf, size = model:GetBoundingBox()
+    local camera = Instance.new("Camera")
+    camera.FieldOfView = 30
+    local dist = size.Magnitude * 1.9
+    camera.CFrame = CFrame.lookAt(cf.Position + Vector3.new(0, size.Y * 0.25, -dist), cf.Position)
+    camera.Parent = vp
+    vp.CurrentCamera = camera
+end
+
 local function spotPoint(i: number): Vector3
     local floor = Ctx.station("Pen"):FindFirstChild("PenFloor") :: BasePart
     return (floor:FindFirstChild("Spot" .. i) :: Attachment).WorldPosition

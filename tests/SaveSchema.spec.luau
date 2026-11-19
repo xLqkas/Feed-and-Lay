@@ -283,6 +283,7 @@ do
         mutation = "Shiny",
         sparkle = true,
         chunks = Economy.CHUNKS_PER_EGG,
+        gift = true,
     }
     flying.state, flying.arrivesAt = "Flight", 99
     local washing: any = {
@@ -298,6 +299,8 @@ do
     d.book["Moss Turtle"] = { found = true, claimed = true, mutations = { Normal = true } }
     d.receipts["purchase-1"] = true
     d.stats = { throws = 4, hatches = 2 }
+    d.pity = { [1] = 3, [2] = 7 }
+    d.gifts.rareEgg = true
     d.nextId = 5
     d.migratedFrom = 6
 
@@ -309,6 +312,8 @@ do
     check(back.nest[1].species == "Clover Fawn" and back.nest[1].mutation == "Shiny", "egg contents kept")
     check(deepEqual(SaveSchema.serialize(back), saved), "load(serialize(d)) round trip is lossless")
     check(back.coins == 1234.5 and back.migratedFrom == 6 and back.receipts["purchase-1"], "scalars kept")
+    check(back.pity[1] == 3 and back.pity[2] == 7 and back.gifts.rareEgg, "discovery meter and gift flag kept")
+    check(back.nest[1].gift == true and back.nest[2].gift == nil, "gift egg keeps its flag")
 end
 
 -- 9. Session lock

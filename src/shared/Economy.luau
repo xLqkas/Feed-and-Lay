@@ -205,6 +205,16 @@ Economy.TUTORIAL_CHUNKS = 4
 Economy.MIN_WASH_TIME = 1.5
 Economy.WASH_SWEEP_FLOOR = 3.5 -- even an instant nozzle waits for the back blobs to turn into view
 
+-- Discovery meter (catchiness pass): every hatch from a zone still missing a creature fills that zone's meter;
+-- once it reaches the missing creature's number, the next egg thrown into the zone is that creature. The meter
+-- empties on every new discovery in the zone. "Missing" = the first unfound creature of the zone in slot order.
+Economy.DISCOVERY_PITY = { Common = 1, Uncommon = 4, Rare = 8, Epic = 12, Legendary = 20, Mythic = 30, Secret = 50 }
+
+-- Scripted first-time gift (catchiness pass): from this throw on, the first Meadow egg is a sparkly Clover Fawn,
+-- once per save. Shown to the player as a gift from Mama Hen, never as luck, and never sold.
+Economy.GIFT_THROW = 4
+Economy.GIFT_SPECIES = "Clover Fawn"
+
 -- 4.6 Slot costs, keyed by the slot being bought
 Economy.NestSlotCost = { [3] = 100, [4] = 1e3, [5] = 20e3, [6] = 500e3, [7] = 20e6, [8] = 1e9 }
 Economy.PenSlotCost = {
@@ -365,6 +375,17 @@ function Economy.washTimeEstimate(zoneId: number, nozzleLevel: number, chunks: n
     local nozzle = Economy.Nozzles[nozzleLevel]
     local hp = Economy.Zones[zoneId].ChunkHP * (chunks or Economy.CHUNKS_PER_EGG)
     return math.max(Economy.WASH_SWEEP_FLOOR, hp / (nozzle.DPS * nozzle.AvgChunksHit))
+end
+
+-- First creature of a zone (slot order A, B, C) the player has not found, or nil when the zone is complete
+function Economy.missingCreature(zoneId: number, found: { [string]: boolean }): Creature?
+    for slot = 1, 3 do
+        local c = Economy.Creatures[(zoneId - 1) * 3 + slot]
+        if not found[c.Name] then
+            return c
+        end
+    end
+    return nil
 end
 
 function Economy.petIncome(pet: Pet): number

@@ -74,6 +74,27 @@ function EggRules.income(data: any): number
     return Economy.incomePerSecond(EggRules.penPets(data), data.rebirths)
 end
 
+-- Species the player has found, counting eggs already thrown (their species is decided at release)
+function EggRules.foundOrPending(data: any): { [string]: boolean }
+    local found = {}
+    for species, entry in data.book do
+        found[species] = entry.found
+    end
+    for _, egg in data.nest do
+        found[egg.species] = true
+    end
+    return found
+end
+
+-- Discovery meter as sent to the client: string keys, since a sparse number-keyed table does not cross a remote
+function EggRules.pityView(data: any): { [string]: number }
+    local view = {}
+    for zone, n in data.pity do
+        view[tostring(zone)] = n
+    end
+    return view
+end
+
 local function findEgg(data: any, id: number?): (any, number?)
     for i, egg in data.nest do
         if egg.id == id then
@@ -146,10 +167,22 @@ function EggRules.release(
 
     local firstEver = data.stats.throws == 0 and #data.pets == 0
     local creature
+    local gift = false
+    local found = EggRules.foundOrPending(data)
+    local missing = Economy.missingCreature(zone.Id, found)
     if firstEver then
         creature = Economy.CreatureByName[Economy.FIRST_EGG]
         zone = Economy.Zones[creature.Zone]
-    else
+    elseif not data.gifts.rareEgg and data.stats.throws + 1 >= Economy.GIFT_THROW and zone.Id == 1 then
+        data.gifts.rareEgg = true -- saved: the gift happens once per save
+        if not found[Economy.GIFT_SPECIES] then
+            creature, gift = Economy.CreatureByName[Economy.GIFT_SPECIES], true
+        end
+    end
+    if not creature and missing and (data.pity[zone.Id] or 0) >= Economy.DISCOVERY_PITY[missing.Rarity] then
+        creature = missing
+    end
+    if not creature then
         local luck = Economy.Foods[data.foodTier].Luck
         creature = Economy.rollEgg(zone.Id, luck, goldenHour, rSpecies)
     end
@@ -162,6 +195,7 @@ function EggRules.release(
         mutation = mutation,
         sparkle = creature.Slot == "C",
         chunks = if firstEver then Economy.TUTORIAL_CHUNKS else Economy.CHUNKS_PER_EGG,
+        gift = if gift then true else nil,
         state = "Flight",
         arrivesAt = now + Economy.FLIGHT_TIME,
     }
@@ -181,6 +215,7 @@ function EggRules.release(
         multiplier = multiplier,
         label = EggRules.throwLabel(p, multiplier),
         sparkle = egg.sparkle,
+        gift = gift,
         throwNumber = data.stats.throws,
         releasedAt = now,
         foodLandsAt = now + Economy.FOOD_FLIGHT,
@@ -410,12 +445,22 @@ function EggRules.hatch(data: any, rt: Runtime, now: number): { [string]: any }
     entry.found = true
     entry.mutations[egg.mutation] = true
     data.stats.hatches += 1
+    -- discovery meter: empties on a new find, fills while the zone still misses a creature
+    if firstOfSpecies then
+        data.pity[egg.zone] = 0
+    elseif Economy.missingCreature(egg.zone, EggRules.foundOrPending(data)) then
+        data.pity[egg.zone] = (data.pity[egg.zone] or 0) + 1
+    end
 
     local pet = { id = egg.id, species = egg.species, mutation = egg.mutation, pen = false }
     local placement = EggRules.placePet(data, pet)
 
     local rare = table.find(Economy.RarityOrder, creature.Rarity) :: number >= 3
-    local full = data.stats.hatches <= Economy.FULL_REVEAL_HATCHES or rare or egg.mutation ~= "Normal" or firstOfSpecies
+    local full = data.stats.hatches <= Economy.FULL_REVEAL_HATCHES
+        or rare
+        or egg.mutation ~= "Normal"
+        or firstOfSpecies
+        or egg.gift == true
     local duration = if full then Economy.FULL_REVEAL_TIME else Economy.COMPACT_REVEAL_TIME
     local revealAt = math.max(now, rt.revealUntil) -- reveals queue on the Hatch Pad
     rt.revealUntil = revealAt + duration
@@ -438,6 +483,8 @@ function EggRules.hatch(data: any, rt: Runtime, now: number): { [string]: any }
         revealAt = revealAt,
         revealSeconds = duration,
         firstOfSpecies = firstOfSpecies,
+        gift = egg.gift == true,
+        pity = EggRules.pityView(data),
         placement = placement,
     }
 end

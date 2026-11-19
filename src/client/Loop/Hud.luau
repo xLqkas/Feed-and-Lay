@@ -78,6 +78,21 @@ end
 Hud.leftColumn = column("LeftColumn", false)
 Hud.rightColumn = column("RightColumn", true)
 
+-- Next creature card (catchiness pass): the next "???" to find and a bar toward it, under Upgrades.
+-- Main fills it (Goals.nextCreature); it slides with the right column.
+local nextCard = Kit.frame(Hud.rightColumn, "NextCreature")
+nextCard.LayoutOrder = 50
+nextCard.Size = UDim2.fromOffset(150, 250)
+nextCard.Visible = false
+local nextTitle = Kit.text(nextCard, "NEXT", T.label, C.reward, nil, 2)
+nextTitle.Size = UDim2.fromOffset(150, 32)
+local nextHolder = Kit.frame(nextCard, "Holder")
+nextHolder.Position = UDim2.fromOffset(0, 34)
+nextHolder.Size = UDim2.fromOffset(150, 170)
+local nextBar = Kit.progressBar(nextCard, UDim2.fromOffset(150, 36), nil)
+nextBar.frame.Position = UDim2.fromOffset(0, 212)
+Hud.nextCreature = { frame = nextCard, title = nextTitle, holder = nextHolder, bar = nextBar }
+
 -- Columns slide off their edge while a panel is open or a station HUD is up (C10).
 local hidden: { [string]: boolean } = {}
 local columnY = 0.40

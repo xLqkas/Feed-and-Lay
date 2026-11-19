@@ -139,6 +139,9 @@ local function launch(r: any)
     if r.label == "SWEET!" then
         Sfx.play("ding")
     end
+    if r.gift then -- scripted once per save (server): presented as a gift, never as luck
+        Hud.toast("Mama Hen is laying you a sparkly gift egg!", "announce")
+    end
     task.delay(0.6, function()
         if not charging then
             Hud.meter.Visible = false

@@ -65,6 +65,9 @@
         },
         "Economy": {
           "$path": "src/shared/Economy.luau"
+        },
+        "Goals": {
+          "$path": "src/shared/Goals.luau"
         }
       }
     },

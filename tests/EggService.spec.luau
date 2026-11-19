@@ -542,6 +542,75 @@ do
     svc:remove(p)
 end
 
+-- 11. Scripted gift (catchiness pass): from throw GIFT_THROW on, the first Meadow egg is the sparkly gift
+--     creature, once per save, with the full reveal; a returning save never gets it again.
+do
+    local p = { Name = "gift" }
+    local data = SaveSchema.new()
+    data.stats.throws = Economy.GIFT_THROW - 2
+    data.pets = { { id = 1, species = "Moss Turtle", mutation = "Normal", pen = true } }
+    data.book["Moss Turtle"] = { found = true, claimed = true, mutations = { Normal = true } }
+    data.nextId = 2
+    data.nestSlots = 4
+    svc:add(p, data)
+    local r1 = throwOnce(p, 0.5)
+    check(r1.ok and not r1.gift and data.nest[1].species ~= Economy.GIFT_SPECIES, "no gift before its throw")
+    local r2 = throwOnce(p, 0.5)
+    check(r2.ok and r2.gift == true and r2.sparkle == true, "gift throw is marked and sparkles")
+    check(data.nest[2].species == Economy.GIFT_SPECIES and data.gifts.rareEgg, "gift egg is the gift creature, saved")
+    check(not leaksSpecies(r2), "gift reply has no species")
+    local r3 = throwOnce(p, 0.5)
+    check(r3.ok and not r3.gift, "the gift happens once")
+    local back = assert(SaveSchema.load(SaveSchema.serialize(data)))
+    check(back.gifts.rareEgg and back.nest[2].gift, "gift flag survives a rejoin")
+    t += Economy.FLIGHT_TIME
+    check(R.StartWash(p).ok, "gift wash starts")
+    washUntilDone(p, 30) -- first egg (not the gift)
+    t = svc:get(p).rt.revealUntil + 0.01
+    svc:update()
+    washUntilDone(p, 30)
+    local hatches = pushes("HatchResult", p)
+    local h = hatches[#hatches].args[1]
+    check(h.species == Economy.GIFT_SPECIES and h.gift and h.mode == "full", "gift hatches with the full reveal")
+    svc:remove(p)
+end
+
+-- 12. Discovery meter: hatches from a zone still missing a creature fill the meter; at the missing creature's
+--     number the next egg thrown there is that creature, and the meter empties.
+do
+    local p = { Name = "pity" }
+    local data = SaveSchema.new()
+    data.stats.throws = 50
+    data.gifts.rareEgg = true
+    for _, name in { "Meadow Bunny", "Moss Turtle" } do
+        data.book[name] = { found = true, claimed = true, mutations = { Normal = true } }
+    end
+    data.pets = { { id = 1, species = "Meadow Bunny", mutation = "Normal", pen = true } }
+    data.nextId = 2
+    svc:add(p, data)
+    local need = Economy.DISCOVERY_PITY["Rare"]
+    data.pity[1] = need - 1
+    throwOnce(p, 0.5)
+    local egg = data.nest[1]
+    check(egg.species ~= "Clover Fawn", "test setup: first egg is a repeat (deterministic seed)")
+    do
+        t += Economy.FLIGHT_TIME
+        R.StartWash(p)
+        washUntilDone(p, 30)
+        check(data.pity[1] == need, "a repeat hatch fills the meter (" .. tostring(data.pity[1]) .. ")")
+        t = svc:get(p).rt.revealUntil + 1
+        svc:update()
+        R.StopWash(p)
+        throwOnce(p, 0.5)
+        check(data.nest[#data.nest].species == "Clover Fawn", "full meter: the next egg is the missing creature")
+    end
+    data.pity[1] = 0
+    data.book["Clover Fawn"] = { found = true, claimed = false, mutations = { Normal = true } }
+    check(Economy.missingCreature(1, EggRules.foundOrPending(data)) == nil, "complete zone has nothing missing")
+    check(Economy.missingCreature(2, {}).Name == "Bog Frog", "an untouched zone misses its first creature")
+    svc:remove(p)
+end
+
 -- 10. The old exploits are gone: no client-reported wash progress, no sell remote
 do
     local names = {}

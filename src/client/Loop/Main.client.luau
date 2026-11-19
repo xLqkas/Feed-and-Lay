@@ -32,6 +32,10 @@ local Hatch = require(script.Parent.Hatch)
 local Lift = require(script.Parent.Lift)
 local Menus = require(script.Parent.Menus)
 local Trail = require(script.Parent.Trail)
+local Teaser = require(script.Parent.Teaser)
+local Kit = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("Kit"))
+local Logic = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("Logic"))
+local Goals = require(game:GetService("ReplicatedStorage"):WaitForChild("Modules"):WaitForChild("Goals"))
 
 local state
 repeat
@@ -46,6 +50,19 @@ Ctx.foodTier = state.foodTier
 Ctx.nozzleLevel = state.nozzleLevel
 Ctx.dumbbellTier = state.dumbbellTier
 Ctx.stats = state.stats
+local function readPity(view: any)
+    table.clear(Ctx.pity)
+    for k, v in view or {} do
+        local zone = tonumber(k)
+        if zone and type(v) == "number" then
+            Ctx.pity[zone] = v
+        end
+    end
+end
+readPity(state.pity)
+Ctx.on("hatched", function(r: any)
+    readPity(r.pity)
+end)
 Ctx.settings.followThrows = state.settings.followThrows == true
 Ctx.settings.reducedMotion = state.settings.reducedMotion == true
 local zones: { [number]: boolean } = {}
@@ -99,26 +116,32 @@ for _, egg in Ctx.nest do -- eggs saved mid-flight land when their time comes
 end
 
 -- Objective banner and trail. During onboarding (steps 1-15, design-v3 section 5) the saved step decides;
--- afterwards the banner follows what is going on (the "Next:" goal banner is P-7).
+-- afterwards Goals picks the player's real next goal (never a tutorial line).
 local function nestFull(): boolean
     return #Ctx.nest >= (player:GetAttribute("NestSlots") or 2)
 end
 
-local function contextual(): string?
-    local flying = false
-    for _, egg in Ctx.nest do
-        if egg.state == "Flight" then
-            flying = true
+local function goalState(): Goals.State
+    local found, unclaimed = {}, 0
+    for species, claimed in Ctx.book do
+        found[species] = true
+        if not claimed then
+            unclaimed += 1
         end
     end
-    if Ctx.waitingEggs() > 0 then
-        return if Throw.onLedge and not nestFull() then "Throw again, or wash your eggs!" else "Wash your muddy egg!"
-    elseif flying then
-        return "Watch Mama Hen eat!"
-    elseif Throw.onLedge then
-        return "Hold to throw food to Mama Hen!"
-    end
-    return "Walk to the ledge!"
+    return {
+        coins = player:GetAttribute("Coins") or 0,
+        strength = Ctx.strength,
+        foodTier = Ctx.foodTier,
+        nozzleLevel = Ctx.nozzleLevel,
+        dumbbellTier = Ctx.dumbbellTier,
+        nestSlots = player:GetAttribute("NestSlots") or 2,
+        found = found,
+        unclaimed = unclaimed,
+        pity = Ctx.pity,
+        nestFull = nestFull(),
+        waitingEggs = Ctx.waitingEggs(),
+    }
 end
 
 -- Returns banner text and trail target (station name) for the current step
@@ -160,6 +183,11 @@ local function objective(step: number): (string?, string?)
     elseif step == 12 then
         return "Lift until Strength " .. marsh .. "!", if Ctx.lifting then nil else "LiftBench"
     elseif step == 13 then
+        for _, egg in Ctx.nest do
+            if egg.zone >= 2 then -- the Marsh egg is already caught: wash it, do not throw more Meadow eggs
+                return "Wash your Bog Marsh egg!", if egg.state == "Flight" then nil else "Washer"
+            end
+        end
         if nestFull() then
             return "Nest full! Wash your eggs first.", "Washer"
         end
@@ -169,10 +197,36 @@ local function objective(step: number): (string?, string?)
     elseif step == 15 then
         return "Buy Carrots for better eggs!", "Sign_Food"
     end
-    return contextual(), nil
+    return nil, nil -- after the tutorial: the goal line (Goals.next)
+end
+
+-- Next creature card (Hud.nextCreature): "???" silhouette of the next creature and the bar toward it
+local card = Hud.nextCreature
+local cardSpecies = ""
+local function refreshCard(step: number)
+    local t = if step >= 8 then Goals.nextCreature(goalState()) else nil
+    card.frame.Visible = t ~= nil
+    if not t then
+        return
+    end
+    if t.creature.Name ~= cardSpecies then
+        cardSpecies = t.creature.Name
+        card.holder:ClearAllChildren()
+        local c = Kit.rarityCard(card.holder, t.creature.Rarity, true)
+        Pen.viewport(c.viewport, t.creature.Name, t.creature.Rarity)
+        Kit.pop(card.frame, 1.15)
+    end
+    local ready = not t.locked and t.current >= t.target
+    card.title.Text = if ready then "NEXT EGG!" else "NEXT"
+    local label = if t.locked
+        then "Str " .. Logic.formatNumber(t.current) .. "/" .. Logic.formatNumber(t.target)
+        else t.current .. "/" .. t.target .. " eggs"
+    Kit.setProgress(card.bar, t.current / t.target, if ready then "Guaranteed!" else label)
 end
 
 local keeperUntil = 0
+local lastGoal = ""
+local goalTrailUntil = 0
 local lastStep = math.max(player:GetAttribute("TutorialStep") or 0, state.tutorialStep or 0)
 player:GetAttributeChangedSignal("TutorialStep"):Connect(function()
     local step = player:GetAttribute("TutorialStep") or 0
@@ -191,17 +245,27 @@ while true do
         Trail.set(nil)
     else
         local text, target = objective(step)
+        -- count goals get the mini bar under the objective (ui-style-spec 2.4)
+        local current, goal = nil, nil
+        local cost = Ctx.Economy.NestSlotCost[3]
+        if step >= 16 and not Ctx.washing and not Ctx.revealing then
+            local g = Goals.next(goalState(), Logic.formatNumber)
+            if g.text ~= lastGoal then
+                lastGoal = g.text
+                goalTrailUntil = os.clock() + 6 -- a new goal shows the way briefly, then the trail steps aside
+            end
+            text, target = g.text, if os.clock() < goalTrailUntil then g.trail else nil
+            current, goal = g.current, g.target
+        elseif step == 10 and (player:GetAttribute("Coins") or 0) < cost then
+            current, goal = player:GetAttribute("Coins") or 0, cost
+        elseif step == 12 and not Ctx.lifting then -- the lift HUD has its own Strength bar
+            current, goal = Ctx.strength, Ctx.Economy.Zones[2].StrengthGate
+        end
         Hud.setBanner(text)
         Trail.set(target)
-        -- count goals get the mini bar under the objective (ui-style-spec 2.4)
-        local cost = Ctx.Economy.NestSlotCost[3]
-        if step == 10 and (player:GetAttribute("Coins") or 0) < cost then
-            Hud.setGoal(player:GetAttribute("Coins") or 0, cost)
-        elseif step == 12 and not Ctx.lifting then -- the lift HUD has its own Strength bar
-            Hud.setGoal(Ctx.strength, Ctx.Economy.Zones[2].StrengthGate)
-        else
-            Hud.setGoal(nil, nil)
-        end
+        Hud.setGoal(current, goal)
     end
+    refreshCard(step)
+    Teaser.update(Ctx.strength)
     task.wait(0.2)
 end

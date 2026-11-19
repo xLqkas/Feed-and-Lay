@@ -61,24 +61,6 @@ local function unclaimed(): number
     return n
 end
 
--- Puts a pet model in a card's viewport, framed by its bounding box
-local function showModel(vp: ViewportFrame, species: string, rarity: string)
-    local model = Pen.makePet(species, "Normal", rarity)
-    local tag = model:FindFirstChild("Tag", true)
-    if tag then
-        tag:Destroy()
-    end
-    model:PivotTo(CFrame.Angles(0, math.rad(200), 0))
-    model.Parent = vp
-    local cf, size = model:GetBoundingBox()
-    local camera = Instance.new("Camera")
-    camera.FieldOfView = 30
-    local dist = size.Magnitude * 1.9
-    camera.CFrame = CFrame.lookAt(cf.Position + Vector3.new(0, size.Y * 0.25, -dist), cf.Position)
-    camera.Parent = vp
-    vp.CurrentCamera = camera
-end
-
 local bookSignature = ""
 local function refreshBook(force: boolean?)
     local parts = {}
@@ -99,13 +81,15 @@ local function refreshBook(force: boolean?)
     bookGrid.CellSize = UDim2.fromOffset(150, 170 + 10 + buttonH)
     for i, creature in Economy.Creatures do
         local claimed = Ctx.book[creature.Name]
-        if claimed ~= nil or creature.Zone <= 2 then
+        do -- every creature has a card; undiscovered ones are "???" silhouettes with where to find them
             local cell = Kit.frame(bookList, "Entry")
             cell.LayoutOrder = i
             local card = Kit.rarityCard(cell, creature.Rarity, claimed == nil)
-            showModel(card.viewport, creature.Name, creature.Rarity)
+            Pen.viewport(card.viewport, creature.Name, creature.Rarity)
             if claimed == nil then
-                card.rarity.Text = Economy.Zones[creature.Zone].Name
+                local where = Kit.text(cell, "in " .. Economy.Zones[creature.Zone].Name, T.small, C.panelText, nil, 0)
+                where.Position = UDim2.fromOffset(0, 176)
+                where.Size = UDim2.fromOffset(150, 28)
                 continue
             end
             card.title.Text = creature.Name

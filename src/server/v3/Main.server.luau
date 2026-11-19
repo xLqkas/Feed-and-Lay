@@ -7,6 +7,7 @@ local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local HttpService = game:GetService("HttpService")
 local ServerStorage = game:GetService("ServerStorage")
 local Workspace = game:GetService("Workspace")
 
@@ -209,6 +210,17 @@ local function onPlayerAdded(player: Player)
         }
         player:Kick(why[status] or "Could not load your save. Please rejoin in a moment.")
         return
+    end
+    -- Studio-only test hook: ServerStorage attribute FLDebugProfile (JSON) is merged into an unsaved profile at
+    -- load, so play-mode tests can start a fresh player further along. Never read in a live server.
+    local debugProfile = ServerStorage:GetAttribute("FLDebugProfile")
+    if RunService:IsStudio() and not canSave[player] and type(debugProfile) == "string" then
+        local raw = SaveSchema.serialize(data)
+        for k, v in HttpService:JSONDecode(debugProfile) do
+            raw[k] = v
+        end
+        data = SaveSchema.sanitize(raw)
+        warn("[V3] FLDebugProfile applied (Studio test profile)")
     end
 
     svc:add(player, data :: SaveSchema.Data)

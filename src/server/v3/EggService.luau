@@ -152,6 +152,7 @@ function EggService:snapshot(s: any, now: number): { [string]: any }
         rebirths = d.rebirths,
         tutorialStep = d.tutorialStep,
         stats = table.clone(d.stats),
+        pity = EggRules.pityView(d),
         settings = table.clone(d.settings),
         nest = nest,
         pets = pets,

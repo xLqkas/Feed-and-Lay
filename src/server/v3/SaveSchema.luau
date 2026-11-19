@@ -15,7 +15,15 @@ SaveSchema.TUTORIAL_STEPS = 16
 
 export type Pet = { id: number, species: string, mutation: string, pen: boolean }
 -- Saved egg. At runtime EggRules adds state, arrivesAt, hp, washStart, lastHit; those are never saved.
-export type Egg = { id: number, zone: number, species: string, mutation: string, sparkle: boolean, chunks: number }
+export type Egg = {
+    id: number,
+    zone: number,
+    species: string,
+    mutation: string,
+    sparkle: boolean,
+    chunks: number,
+    gift: boolean?,
+}
 export type Data = {
     version: number,
     coins: number,
@@ -34,6 +42,8 @@ export type Data = {
     settings: { music: boolean, sfx: boolean, followThrows: boolean, reducedMotion: boolean },
     receipts: { [string]: boolean },
     stats: { throws: number, hatches: number },
+    pity: { [number]: number }, -- discovery meter per zone id (Economy.DISCOVERY_PITY)
+    gifts: { rareEgg: boolean }, -- scripted first-time rewards already given
     nextId: number,
     migratedFrom: number?,
 }
@@ -59,6 +69,8 @@ function SaveSchema.new(): Data
         settings = { music = true, sfx = true, followThrows = false, reducedMotion = false },
         receipts = {},
         stats = { throws = 0, hatches = 0 },
+        pity = {},
+        gifts = { rareEgg = false },
         nextId = 1,
     }
 end
@@ -183,6 +195,7 @@ function SaveSchema.sanitize(raw: any): (Data, { string })
                 chunks = if e.chunks == Economy.TUTORIAL_CHUNKS
                     then Economy.TUTORIAL_CHUNKS
                     else Economy.CHUNKS_PER_EGG,
+                gift = if e.gift == true then true else nil,
             }
             if egg.id == 0 then
                 table.insert(needIds, egg)
@@ -240,6 +253,18 @@ function SaveSchema.sanitize(raw: any): (Data, { string })
     if type(raw.stats) == "table" then
         d.stats.throws = num(raw.stats.throws, 0, 0, 1e15, true)
         d.stats.hatches = num(raw.stats.hatches, 0, 0, 1e15, true)
+    end
+    if type(raw.pity) == "table" then
+        for zone = 1, #Economy.Zones do
+            -- DataStore JSON may turn number keys into strings
+            local v = raw.pity[zone] or raw.pity[tostring(zone)]
+            if v ~= nil then
+                d.pity[zone] = num(v, 0, 0, 1000, true)
+            end
+        end
+    end
+    if type(raw.gifts) == "table" then
+        d.gifts.rareEgg = raw.gifts.rareEgg == true
     end
     return d, notes
 end
@@ -320,11 +345,16 @@ function SaveSchema.serialize(d: Data): { [string]: any }
             mutation = e.mutation,
             sparkle = e.sparkle,
             chunks = e.chunks,
+            gift = e.gift,
         })
     end
     local book = {}
     for species, entry in d.book do
         book[species] = { found = entry.found, claimed = entry.claimed, mutations = table.clone(entry.mutations) }
+    end
+    local pity = {}
+    for zone, n in d.pity do
+        pity[tostring(zone)] = n -- string keys: a sparse number-keyed table does not survive JSON
     end
     return {
         version = SaveSchema.VERSION,
@@ -344,6 +374,8 @@ function SaveSchema.serialize(d: Data): { [string]: any }
         settings = table.clone(d.settings),
         receipts = table.clone(d.receipts),
         stats = table.clone(d.stats),
+        pity = pity,
+        gifts = table.clone(d.gifts),
         nextId = d.nextId,
         migratedFrom = d.migratedFrom,
     }

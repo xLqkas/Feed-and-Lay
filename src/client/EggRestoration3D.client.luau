@@ -1053,15 +1053,6 @@ local function startRestoration(eggData, cleanerModel)
             end
         end
     end)
-                            local currentPct = math.floor((cleanedChunksCount / totalChunks) * 100)
-                            CleanEggRemote:InvokeServer(rec.Index, currentPct)
-                            updateHUDProgress()
-                        end
-                    end
-                end
-            end
-        end
-    end)
 end
 
 -----------------------------------------------------

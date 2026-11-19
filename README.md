@@ -82,3 +82,18 @@ Please read [3D_ARTIST_GUIDE.md](./3D_ARTIST_GUIDE.md) before creating models. I
    rojo serve
    ```
 4. Open the place in **Roblox Studio** and click **Connect** in the Rojo plugin tab.
+
+---
+
+## Development
+
+Tools are pinned in `rokit.toml` (Rojo 7.7.1, selene, StyLua). Install [rokit](https://github.com/rojo-rbx/rokit), then:
+
+```bash
+rokit install                      # install the pinned tools
+selene src tests                   # lint (std = roblox)
+stylua --check src tests           # check formatting (not yet applied to existing code)
+rojo build -o ../EggSanctuary.rbxlx  # check the project compiles (scripts only)
+```
+
+Only scripts live in git. The map, HUD, pet templates, sounds and lighting exist only in the Studio place (see `docs/ai/studio-only-inventory.md`). Never publish a place built with `rojo build`: it contains no map. `default.project.json` sets `$ignoreUnknownInstances` so `rojo serve` only updates the mapped scripts and leaves Studio-only instances alone.

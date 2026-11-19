@@ -3,15 +3,22 @@
   "tree": {
     "$className": "DataModel",
     "ServerScriptService": {
+      "$ignoreUnknownInstances": true,
       "EggSanctuaryServer": {
         "$className": "Folder",
+        "$ignoreUnknownInstances": true,
         "MainGameServer": {
           "$path": "src/server/MainGameServer.server.luau"
         }
+      },
+      "DayNightCycle": {
+        "$path": "src/server/DayNightCycle.server.luau"
       }
     },
     "StarterPlayer": {
+      "$ignoreUnknownInstances": true,
       "StarterPlayerScripts": {
+        "$ignoreUnknownInstances": true,
         "EggSanctuaryClient": {
           "$path": "src/client/EggSanctuaryClient.client.luau"
         },
@@ -24,14 +31,25 @@
       }
     },
     "ReplicatedStorage": {
+      "$ignoreUnknownInstances": true,
       "Modules": {
         "$className": "Folder",
+        "$ignoreUnknownInstances": true,
         "GameConfig": {
           "$path": "src/shared/GameConfig.luau"
         },
         "SoundHelper": {
           "$path": "src/shared/SoundHelper.luau"
+        },
+        "Economy": {
+          "$path": "src/shared/Economy.luau"
         }
+      }
+    },
+    "Teams": {
+      "$ignoreUnknownInstances": true,
+      "Script": {
+        "$path": "src/teams/Script.server.luau"
       }
     }
   }

@@ -207,7 +207,7 @@ GameConfig.EggCrusts = {
         ParticleColor = Color3.fromRGB(55, 48, 48),
         ChunkHP = 120,
         EggCoreColor = Color3.fromRGB(30, 24, 28),
-        EggCoreMaterial = Enum.Material.Neon, -- Glowing lava cracks!
+        EggCoreMaterial = Enum.Material.Neon,
         PatternName = "Magma Vein",
     },
     [4] = { -- Sunken Coral Reef

@@ -91,6 +91,25 @@ foodChip.LayoutOrder = 2
 local nestChip, nestLabel = chip(stats, "NestChip", Color3.fromRGB(255, 240, 210), 190)
 nestChip.LayoutOrder = 3
 Hud.nestChip = nestChip
+-- shortcut: Strength icon is a plain disc until the dumbbell icon exists (design-v3 7.5 item 6)
+local strengthChip, strengthLabel = chip(stats, "StrengthChip", Color3.fromRGB(255, 140, 64), 230)
+strengthChip.LayoutOrder = 4
+
+-- Progressive HUD (design-v3 section 5): each element appears at the onboarding step where it becomes useful.
+-- Coins 7, Nest 8, Strength 11, Food 15 (the food chip only matters once there is a second food).
+function Hud.setStep(step: number)
+    coins.frame.Visible = step >= 7
+    nestChip.Visible = step >= 8
+    strengthChip.Visible = step >= 11
+    foodChip.Visible = step >= 15
+end
+Hud.setStep(0)
+
+local function refreshStrength()
+    strengthLabel.Text = "Strength " .. Logic.formatNumber(player:GetAttribute("Strength") or Economy.START_STRENGTH)
+end
+player:GetAttributeChangedSignal("Strength"):Connect(refreshStrength)
+refreshStrength()
 
 local foodButton = Instance.new("TextButton")
 foodButton.Name = "Tap"

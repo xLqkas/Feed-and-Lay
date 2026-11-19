@@ -25,6 +25,7 @@ local ENTER = 2.6 -- the bench ring is 4 studs across
 local LEAVE = 4.5
 local TARGET = 150 -- target circle diameter, reference px
 local ACTION = "FLLiftTap"
+local RING_Y = 0.3 -- above the character in the side view
 
 local Lift = {}
 local active = false
@@ -42,7 +43,7 @@ hud.Visible = false
 local function circle(name: string, color: Color3, thickness: number): Frame
     local f = Kit.frame(hud, name, C.paper)
     f.AnchorPoint = Vector2.new(0.5, 0.5)
-    f.Position = UDim2.fromScale(0.5, 0.45)
+    f.Position = UDim2.fromScale(0.5, RING_Y)
     f.Size = UDim2.fromOffset(TARGET, TARGET)
     f.BackgroundTransparency = 1
     Kit.corner(f, UDim.new(0.5, 0))
@@ -54,7 +55,7 @@ local target = circle("Target", C.paper, 10)
 local outer = circle("Ring", C.reward, 8)
 local word = Kit.text(hud, "", Theme.TextSize.display)
 word.AnchorPoint = Vector2.new(0.5, 0.5)
-word.Position = UDim2.fromScale(0.5, 0.45)
+word.Position = UDim2.fromScale(0.5, RING_Y)
 word.Size = UDim2.fromOffset(420, 70)
 local bar = Kit.progressBar(hud, UDim2.fromOffset(560, 40), C.reward)
 bar.frame.AnchorPoint = Vector2.new(0.5, 0)

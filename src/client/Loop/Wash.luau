@@ -218,6 +218,10 @@ local function start()
     local r = Ctx.invoke("StartWash")
     pending = false
     if not r.ok then
+        if r.message == "Step into your washer!" then
+            blockedUntil = os.clock() + 0.3 -- the server has not seen us arrive yet: retry quietly
+            return
+        end
         blockedUntil = os.clock() + 2
         Hud.toast(r.message, "error")
         Sfx.play("bonk")

@@ -439,7 +439,8 @@ export type Card = { frame: Frame, rarity: TextLabel, name: TextLabel, mutation:
 function Hud.card(compact: boolean): Card
     if not compact and not Motion.reduced() then
         local flash = Kit.frame(screen.root, "RevealFlash", C.paper)
-        flash.Size = UDim2.fromScale(1, 1)
+        flash.Position = UDim2.fromOffset(0, -200) -- also covers the top bar inset above the safe area
+        flash.Size = UDim2.new(1, 0, 1, 400)
         flash.BackgroundTransparency = 1
         flash.ZIndex = 45
         Motion.play(flash, "revealFlashIn", { BackgroundTransparency = 0.15 }).Completed:Connect(function()

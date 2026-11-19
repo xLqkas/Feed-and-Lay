@@ -83,7 +83,7 @@ close.AnchorPoint = Vector2.new(1, 0)
 
 Kit.onLayout(Hud.screen, function(info)
     local y = if info.compact then 0.62 else 0.6
-    bar.frame.Size = if info.compact then UDim2.new(0.8, 0, 0, 40) else UDim2.fromOffset(560, 40)
+    bar.frame.Size = if info.compact then UDim2.new(0.55, 0, 0, 40) else UDim2.fromOffset(560, 40)
     bar.frame.Position = UDim2.fromScale(0.5, y)
     bellLabel.Position = UDim2.new(0.5, 0, y, 46)
     hint.Position = UDim2.new(0.5, 0, y, 78)

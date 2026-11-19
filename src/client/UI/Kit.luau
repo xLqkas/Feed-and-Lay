@@ -694,7 +694,8 @@ end
 -- Panel manager: one panel open at a time behind a shade + blur 18 (spec 3.1, motion spec 5).
 function Kit.panels(screen: Screen): Panels
     local shade = Kit.frame(screen.root, "MenuShade", C.shade)
-    shade.Size = UDim2.fromScale(1, 1)
+    shade.Position = UDim2.fromOffset(0, -200) -- also covers the top bar inset above the safe area
+    shade.Size = UDim2.new(1, 0, 1, 400)
     shade.BackgroundTransparency = 1
     shade.Visible = false
     shade.Active = true -- swallows clicks to the HUD below

@@ -35,6 +35,14 @@ function Hatch.handOver(eggId: number, part: BasePart)
     handed[eggId] = part
 end
 
+-- The pet's name billboard would sit under the reveal text; it is shown again when the reveal ends
+local function showTag(pet: Model, on: boolean)
+    local tag = pet:FindFirstChild("Tag", true) :: BillboardGui?
+    if tag then
+        tag.Enabled = on
+    end
+end
+
 -- Slot roll: the zone's 3 creature names cycle `ticks` times with growing intervals, then land on the result
 local function roll(card: Hud.Card, r: any, ticks: number, seconds: number)
     local names = {}
@@ -167,10 +175,12 @@ local function full(r: any, egg: BasePart)
     egg:Destroy()
     shards(at)
     local pet = Pen.makePet(r.species, r.mutation, r.rarity)
+    showTag(pet, false)
     pet:PivotTo(CFrame.lookAt(at, Vector3.new(camPos.X, at.Y, camPos.Z)))
     burst(card, r, at, true)
     task.wait(1.5)
     card.frame:Destroy()
+    showTag(pet, true)
     Cam.clear("reveal")
     Ctx.revealing = false
     placementToast(r)

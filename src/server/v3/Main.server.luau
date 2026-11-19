@@ -21,7 +21,7 @@ local AUTOSAVE_INTERVAL = 60
 local UPDATE_INTERVAL = 0.1
 local SHUTDOWN_WAIT = 25
 local STATION_MAX_DY = 8 -- vertical slack for station distance checks
-local RADIUS = { Ledge = Economy.LEDGE_RADIUS, Washer = Economy.WASHER_RADIUS }
+local RADIUS = { Ledge = Economy.LEDGE_RADIUS, Washer = Economy.WASHER_RADIUS, Lift = Economy.LIFT_RADIUS }
 
 -- Remotes: a new folder so the old client scripts (still waiting on ReplicatedStorage.Remotes) cannot collide
 local folder = Instance.new("Folder")
@@ -275,6 +275,10 @@ task.spawn(function()
             player:SetAttribute("IncomePerSecond", EggRules.income(d))
             player:SetAttribute("NestUsed", #d.nest)
             player:SetAttribute("NestSlots", d.nestSlots)
+            player:SetAttribute("TutorialStep", d.tutorialStep)
+            player:SetAttribute("FoodTier", d.foodTier)
+            player:SetAttribute("NozzleLevel", d.nozzleLevel)
+            player:SetAttribute("DumbbellTier", d.dumbbellTier)
         end
     end
 end)

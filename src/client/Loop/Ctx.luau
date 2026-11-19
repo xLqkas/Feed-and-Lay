@@ -22,6 +22,9 @@ Ctx.settings = { followThrows = false, reducedMotion = false }
 Ctx.strength = 50
 Ctx.foodTier = 1
 Ctx.nozzleLevel = 1
+Ctx.dumbbellTier = 1
+Ctx.book = {} :: { [string]: boolean } -- found species -> claimed
+Ctx.lifting = false -- on the Lift Bench
 Ctx.washing = false -- in the wash view
 Ctx.revealing = false -- full reveal playing: spraying paused
 

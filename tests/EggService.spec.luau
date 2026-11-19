@@ -529,7 +529,11 @@ do
         table.insert(names, name)
     end
     table.sort(names)
-    check(table.concat(names, ",") == "GetState,ReleaseThrow,StartCharge,StartWash,StopWash", "remote whitelist")
+    check(
+        table.concat(names, ",")
+            == "Buy,ClaimBook,GetState,Lift,ReleaseThrow,StartCharge,StartLift,StartWash,StopLift,StopWash",
+        "remote whitelist"
+    )
 end
 
 print(string.format("PASS EggService (%d checks)", checks))

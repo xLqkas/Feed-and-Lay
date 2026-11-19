@@ -8,6 +8,8 @@ local Economy = if game
     then require(game:GetService("ReplicatedStorage").Modules.Economy)
     else require("../../shared/Economy")
 local EggRules = if game then require(script.Parent.EggRules) else require("./EggRules")
+local LiftRules = if game then require(script.Parent.LiftRules) else require("./LiftRules")
+local Onboarding = if game then require(script.Parent.Onboarding) else require("./Onboarding")
 
 export type Deps = {
     now: () -> number, -- server time (workspace:GetServerTimeNow())
@@ -25,7 +27,14 @@ local COOLDOWNS = {
     ReleaseThrow = 0.25,
     StartWash = 0.5,
     StopWash = 0.25,
+    StartLift = 0.5,
+    Lift = 0.1,
+    StopLift = 0.25,
+    Buy = 0.3,
+    ClaimBook = 0.3,
 }
+-- Upgrade tracks the Upgrades panel can buy (VS-10 slice: Food, Weights, Nest, Nozzle) and their save field
+local TRACKS = { Food = "foodTier", Dumbbell = "dumbbellTier", Nest = "nestSlots", Nozzle = "nozzleLevel" }
 local SPRAY_MIN_GAP = 0.05 -- drop SprayHits faster than 20 Hz outright; damage is capped by dt anyway
 
 local EggService = {}
@@ -50,6 +59,7 @@ function EggService:add(player: any, data: any)
         last = {},
         busy = {},
         lastSpray = -math.huge,
+        lift = nil,
     }
 end
 
@@ -115,6 +125,12 @@ function EggService:snapshot(s: any, now: number): { [string]: any }
             income = Economy.petIncome({ Species = p.species, Mutation = p.mutation }),
         })
     end
+    local book = {}
+    for species, entry in d.book do
+        if entry.found then
+            table.insert(book, { species = species, claimed = entry.claimed })
+        end
+    end
     local washing
     for _, egg in d.nest do
         if egg.id == rt.washingId then
@@ -139,6 +155,7 @@ function EggService:snapshot(s: any, now: number): { [string]: any }
         settings = table.clone(d.settings),
         nest = nest,
         pets = pets,
+        book = book,
         washing = washing,
         revealUntil = rt.revealUntil,
     }
@@ -191,6 +208,92 @@ function EggService:_StopWash(_player: any, s: any, _now: number)
     return { ok = true, message = "" }
 end
 
+-- Lift Bench (VS-9). StartLift opens a session and returns the seed and the first ring; Lift(sessionId,
+-- ringIndex, elapsed) judges one tap on the server's clock and returns the next ring.
+function EggService:_StartLift(player: any, s: any, now: number)
+    if s.data.stats.hatches == 0 then
+        return { ok = false, message = "Wash your first egg first!" }
+    elseif not self.deps.isNear(player, "Lift") then
+        return { ok = false, message = "Step onto your Lift Bench!" }
+    elseif s.rt.inWasher then
+        return { ok = false, message = "Leave the washer first!" }
+    end
+    s.nextLiftId = (s.nextLiftId or 0) + 1
+    s.lift = LiftRules.start(now, s.nextLiftId, math.floor(self.deps.random() * 2147483646) + 1)
+    Onboarding.advance(s.data, self:_facts(player, s, now))
+    return {
+        ok = true,
+        message = "",
+        sessionId = s.lift.id,
+        seed = s.lift.seed,
+        ring = LiftRules.ringInfo(s.lift),
+        strength = s.data.strength,
+    }
+end
+
+function EggService:_Lift(player: any, s: any, now: number, sessionId: any, ringIndex: any, elapsed: any)
+    local sess = s.lift
+    if not sess or sessionId ~= sess.id then
+        return { ok = false, message = "Step onto your Lift Bench!" }
+    end
+    if now - sess.lastTap > Economy.LIFT_IDLE_CLOSE or not self.deps.isNear(player, "Lift") then
+        s.lift = nil
+        return { ok = false, message = "Step onto your Lift Bench!" }
+    end
+    if type(ringIndex) ~= "number" or (elapsed ~= nil and type(elapsed) ~= "number") then
+        return { ok = false, message = "Bad request." }
+    end
+    local reply = LiftRules.tap(s.data, sess, now, ringIndex, elapsed)
+    reply.ok = true
+    reply.ring = LiftRules.ringInfo(sess)
+    return reply
+end
+
+function EggService:_StopLift(_player: any, s: any, _now: number)
+    s.lift = nil
+    return { ok = true, message = "" }
+end
+
+-- Upgrades (VS-10 minimal panel): next level of a track, paid from coins
+function EggService:_Buy(_player: any, s: any, _now: number, track: any)
+    local field = type(track) == "string" and TRACKS[track]
+    if not field then
+        return { ok = false, message = "Bad request." }
+    end
+    local d = s.data
+    local cost = Economy.upgradeCost(track, d[field])
+    if not cost then
+        return { ok = false, message = "Already maxed!" }
+    elseif d.coins < cost then
+        return { ok = false, message = "Need " .. math.ceil(cost - d.coins) .. " more coins", need = cost - d.coins }
+    end
+    d.coins -= cost
+    d[field] += 1
+    return { ok = true, message = "", track = track, level = d[field], coins = d.coins }
+end
+
+-- Book claim (VS-10 steps 7 and 14): each found species pays its claim once
+function EggService:_ClaimBook(_player: any, s: any, _now: number, species: any)
+    local entry = type(species) == "string" and s.data.book[species]
+    if not entry or not entry.found then
+        return { ok = false, message = "Find it first!" }
+    elseif entry.claimed then
+        return { ok = false, message = "Already claimed!" }
+    end
+    local amount = Economy.CreatureByName[species].BookClaim
+    entry.claimed = true
+    s.data.coins += amount
+    return { ok = true, message = "", species = species, amount = amount }
+end
+
+function EggService:_facts(player: any, s: any, now: number): Onboarding.Facts
+    return {
+        onLedge = s.data.tutorialStep <= 1 and self.deps.isNear(player, "Ledge"),
+        lifting = s.lift ~= nil,
+        revealing = now < s.rt.revealUntil,
+    }
+end
+
 -- SprayHits (UnreliableRemoteEvent): payload { eggId = number, aim = { x, y } } (see EggRules.spray). No reply.
 function EggService:sprayHits(player: any, payload: any)
     local s = self.players[player]
@@ -225,6 +328,7 @@ function EggService:update()
             for _, ev in events do
                 self.deps.send(player, ev[1], ev[2])
             end
+            Onboarding.advance(s.data, self:_facts(player, s, now))
         end)
         if not ok then
             self.deps.log("[EggService] update failed: " .. tostring(err))

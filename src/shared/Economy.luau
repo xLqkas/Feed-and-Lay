@@ -89,6 +89,23 @@ Economy.Dumbbells = {
 }
 Economy.LIFT_REPS_PER_SECOND = 1.2 -- measured target for an active player (3.1)
 
+-- 3.1 Lift ring timing. Each ring waits a random gap (hidden), then shrinks from 2x the target radius to the
+-- target in a random time T; the tap is judged by how far the ring is from the target, as a share of T.
+-- Gaps and T come from Economy.liftRing(seed, k), so the server and the client agree on every ring.
+Economy.LIFT_GAP_MIN = 0.25
+Economy.LIFT_GAP_MAX = 1.1
+Economy.LIFT_RING_MIN = 0.75
+Economy.LIFT_RING_MAX = 1.1
+Economy.LIFT_PERFECT = 0.06 -- ring within 6% of the target radius
+Economy.LIFT_GOOD = 0.18
+Economy.LIFT_LATE = 0.3 -- no tap until the ring is 30% inside the target: miss, next ring
+Economy.LIFT_MIN_REP_GAP = 0.6 -- seconds between accepted reps
+Economy.LIFT_MAX_PER_MINUTE = 75
+Economy.LIFT_MAX_PER_10_MIN = 650
+Economy.LIFT_PERFECT_MAX = 30 -- perfects allowed in any 50 accepted reps; more are downgraded to good
+Economy.LIFT_PERFECT_WINDOW = 50
+Economy.LIFT_IDLE_CLOSE = 20 -- seconds without a tap closes the Lift HUD
+
 -- 4.3 Food (luck L). Lucky Food pass doubles L.
 Economy.Foods = {
     { Tier = 1, Name = "Apple", Luck = 1, Cost = 0 },
@@ -222,6 +239,7 @@ Economy.FULL_REVEAL_TIME = 6.5 -- 3.0 wobble + 2.0 roll + 1.5 hold
 Economy.COMPACT_REVEAL_TIME = 2.5
 Economy.FULL_REVEAL_HATCHES = 5 -- hatches 1-5 ever always get the full reveal
 Economy.LEDGE_RADIUS = 6 -- studs from the Ledge station
+Economy.LIFT_RADIUS = 8 -- studs from the Lift Bench station (3.1)
 Economy.WASHER_RADIUS = 10
 
 -- 3.7 Income bonuses
@@ -261,6 +279,29 @@ end
 -- Farthest zone a SWEET throw reaches: what this Strength has unlocked
 function Economy.zoneForStrength(strength: number): Zone
     return Economy.zoneForDistance(strength * Economy.SWEET_MULTIPLIER)
+end
+
+-- Ring k (1, 2, ...) of a lift session: hidden gap before it shows, and its shrink time T. Pure and
+-- deterministic (Park-Miller steps on the session seed), so the client can draw rings the server will judge.
+function Economy.liftRing(seed: number, k: number): (number, number)
+    local x = (seed * 7919 + k * 104729) % 2147483647
+    x = (x * 48271) % 2147483647
+    local u1 = x / 2147483647
+    x = (x * 48271) % 2147483647
+    local u2 = x / 2147483647
+    return Economy.LIFT_GAP_MIN + (Economy.LIFT_GAP_MAX - Economy.LIFT_GAP_MIN) * u1,
+        Economy.LIFT_RING_MIN + (Economy.LIFT_RING_MAX - Economy.LIFT_RING_MIN) * u2
+end
+
+-- Judges a tap `elapsed` seconds after ring start for a ring of shrink time T: "perfect", "good" or "miss"
+function Economy.liftJudge(elapsed: number, T: number): string
+    local off = math.abs(elapsed - T) / T
+    if off <= Economy.LIFT_PERFECT then
+        return "perfect"
+    elseif off <= Economy.LIFT_GOOD then
+        return "good"
+    end
+    return "miss"
 end
 
 function Economy.strengthPerRep(dumbbellTier: number, rebirths: number): number

@@ -30,7 +30,7 @@ local panels = Kit.panels(screen)
 -- Tiles: Book in the left column, Upgrades in the right (spec 2.1), each with a dot and a pointer.
 local book = Kit.menuTile(Hud.leftColumn, "Book", Kit.art("book"))
 local upgrades = Kit.menuTile(Hud.rightColumn, "Upgrades", Kit.art("upgrade"))
-local pointers = { Book = Kit.pointer(book.button), Upgrades = Kit.pointer(upgrades.button) }
+local pointers = { Book = Kit.pointer(book.button), Upgrades = Kit.pointer(upgrades.button, true) }
 local tiles = { Book = book, Upgrades = upgrades }
 book.button.Visible = false
 upgrades.button.Visible = false

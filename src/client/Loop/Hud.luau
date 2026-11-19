@@ -112,6 +112,10 @@ function Hud.setHidden(reason: string, on: boolean)
         if screen.goal and on then
             screen.goal.Visible = false
         end
+        -- gain / error lane drops to the screen bottom so it does not cover the panel's rows
+        screen.toasts.Position = if on
+            then UDim2.new(0.5, 0, 1, -8)
+            else UDim2.fromScale(0.5, if screen.info.compact then 0.70 else 0.80)
     end
 end
 
@@ -376,7 +380,7 @@ Hud.eatRow = eatRow
 local wash = Kit.frame(screen.root, "WashHud")
 wash.Size = UDim2.fromScale(1, 1)
 wash.Visible = false
-local washBar = Kit.progressBar(wash, UDim2.fromOffset(640, 44), Color3.fromHex("4FC3FF"))
+local washBar = Kit.progressBar(wash, UDim2.fromOffset(640, 44), nil)
 washBar.frame.AnchorPoint = Vector2.new(0.5, 0.5)
 local washHint = Kit.text(wash, "", T.heading, C.paper, nil, 3)
 washHint.Name = "AimHint"

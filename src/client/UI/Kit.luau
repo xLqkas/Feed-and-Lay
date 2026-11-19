@@ -569,18 +569,21 @@ function Kit.revealTile(tile: Tile)
 end
 
 -- Tutorial pointer (spec 4.6): cursor image at the target's lower-right, bobbing toward it.
-function Kit.pointer(target: GuiObject): ImageLabel
+-- `fromLeft` puts it at the lower-left, turned to point up-right (tiles on the right screen edge).
+function Kit.pointer(target: GuiObject, fromLeft: boolean?): ImageLabel
     local p = Instance.new("ImageLabel")
     p.Name = "Pointer"
     p.BackgroundTransparency = 1
     p.Image = Kit.art("cursor")
     p.ScaleType = Enum.ScaleType.Fit
     p.Size = UDim2.fromOffset(72, 72)
-    p.Position = UDim2.new(1, -12, 1, -12)
+    p.AnchorPoint = Vector2.new(if fromLeft then 1 else 0, 0)
+    p.Position = if fromLeft then UDim2.new(0, 12, 1, -12) else UDim2.new(1, -12, 1, -12)
+    p.Rotation = if fromLeft then 90 else 0
     p.ZIndex = 12
     p.Visible = false
     p.Parent = target
-    Motion.bob(p, "arrowBob", Vector2.new(-0.7, -0.7))
+    Motion.bob(p, "arrowBob", Vector2.new(if fromLeft then 0.7 else -0.7, -0.7))
     return p
 end
 
@@ -637,7 +640,7 @@ function Kit.bannerGoal(screen: Screen, current: number?, target: number?)
     goal.Visible = current ~= nil and target ~= nil
     if current and target then
         local bar = goal:FindFirstChild("Bar") :: GuiObject
-        local fill = bar:FindFirstChild("Fill") :: GuiObject
+        local fill = bar:FindFirstChild("Fill", true) :: GuiObject -- inside "Inner" when drawn with art
         Motion.play(fill, "fill", { Size = UDim2.fromScale(math.clamp(current / target, 0, 1), 1) })
         local count = goal:FindFirstChild("Count") :: TextLabel
         count.Text = Logic.formatNumber(math.min(current, target)) .. " / " .. Logic.formatNumber(target)
@@ -1101,7 +1104,7 @@ function Kit.rarityCard(parent: Instance, rarity: string, hidden: boolean?): Car
     count.TextXAlignment = Enum.TextXAlignment.Right
     local check = Kit.image(frame, "check")
     check.AnchorPoint = Vector2.new(0.5, 0.5)
-    check.Position = UDim2.fromOffset(4, 4)
+    check.Position = UDim2.new(1, -6, 0, 6) -- top-right: the income chip owns the top-left
     check.Size = UDim2.fromOffset(36, 36)
     check.ZIndex = 8
     check.Visible = false

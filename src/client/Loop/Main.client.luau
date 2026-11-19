@@ -197,7 +197,7 @@ while true do
         local cost = Ctx.Economy.NestSlotCost[3]
         if step == 10 and (player:GetAttribute("Coins") or 0) < cost then
             Hud.setGoal(player:GetAttribute("Coins") or 0, cost)
-        elseif step == 12 and not Ctx.washing then
+        elseif step == 12 and not Ctx.lifting then -- the lift HUD has its own Strength bar
             Hud.setGoal(Ctx.strength, Ctx.Economy.Zones[2].StrengthGate)
         else
             Hud.setGoal(nil, nil)

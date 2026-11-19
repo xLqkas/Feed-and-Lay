@@ -1,7 +1,7 @@
 --!strict
 -- Washer (design-v3 3.5, VS-7): step into the ring to load the oldest egg; the camera sits on the turntable's
 -- +Z side (the server's facing check assumes it). Hold and aim (mouse, touch, gamepad R2 + right stick) to spray.
--- Every 0.1 s the client sends the chunk ids near the spray point (SprayHits); the server owns chunk HP and
+-- Every 0.1 s the client sends the aim point on the unit egg (SprayHits); the server picks the chunks, owns HP and
 -- answers with ChunkPopped / WashDone / HatchResult / WashLoaded. Progress is popped / chunks, never sent.
 
 local Players = game:GetService("Players")
@@ -24,9 +24,9 @@ local Economy = Ctx.Economy
 local RING_ENTER = 3.6 -- ring is 6.4 studs across
 local RING_LEAVE = 6
 local SPRAY_EVERY = 0.1
-local CAMERA_DISTANCE = 7.5
+local CAMERA_DISTANCE = 6
 local RADII = Fx.EGG_SIZE / 2
-local CHUNK_SIZE = Vector3.new(1.25, 1.25, 0.55)
+local CHUNK_SIZE = Vector3.new(0.8, 0.8, 0.4) -- a pair of chunks reads as one blob about the aim radius wide
 local CURSOR_SPEED = 700 -- gamepad aim, px per second
 
 local Wash = {}
@@ -94,10 +94,16 @@ local function spun(): CFrame
     return center() * CFrame.Angles(0, angle(), 0)
 end
 
--- Same facing rule as the server (EggRules.facing): +Z part of the normal after the turntable turn
+-- Same rules as the server (EggRules.facing / projected): +Z part of the normal after the turntable turn, and
+-- where the chunk shows in the wash view on the unit egg
 local function facing(n: Vector3): number
     local a = angle()
     return -n.X * math.sin(a) + n.Z * math.cos(a)
+end
+
+local function projected(n: Vector3): Vector2
+    local a = angle()
+    return Vector2.new(n.X * math.cos(a) + n.Z * math.sin(a), n.Y)
 end
 
 local function chunkPose(frame: CFrame, c: Chunk): (Vector3, CFrame)
@@ -249,18 +255,19 @@ local function aimPoint(): (Vector2?, boolean)
     return nil, false
 end
 
--- Ray from the camera through the aim point against the egg (sphere fit): hit point or nil
-local function hitEgg(ray: Ray): Vector3?
-    local c = center().Position
-    local r = RADII.Y
-    local o = ray.Origin - c
-    local d = ray.Direction.Unit
+-- Ray from the camera through the aim point against the egg ellipsoid: world hit point and the aim point on
+-- the unit egg (egg-local hit divided by the radii, in the unspun turntable frame), or nil
+local function hitEgg(ray: Ray): (Vector3?, Vector2?)
+    local frame = center()
+    local o = frame:PointToObjectSpace(ray.Origin) / RADII
+    local d = (frame:VectorToObjectSpace(ray.Direction) / RADII).Unit
     local b = o:Dot(d)
-    local disc = b * b - (o:Dot(o) - r * r)
+    local disc = b * b - (o:Dot(o) - 1)
     if disc < 0 then
-        return nil
+        return nil, nil
     end
-    return ray.Origin + d * (-b - math.sqrt(disc))
+    local u = o + d * (-b - math.sqrt(disc))
+    return frame:PointToWorldSpace(u * RADII), Vector2.new(u.X, u.Y)
 end
 
 local function spray(dt: number)
@@ -296,31 +303,27 @@ local function spray(dt: number)
     local ray = if isTouch
         then camera:ScreenPointToRay(point.X, point.Y)
         else camera:ViewportPointToRay(point.X, point.Y)
-    local hit = hitEgg(ray)
+    local hit, aim = hitEgg(ray)
     nozzle.Position = (camera.CFrame * CFrame.new(1.2, -1.1, -2)).Position
     hitPart.Position = hit or (ray.Origin + ray.Direction.Unit * 12)
     beam.Enabled = true
     mist.Rate = if hit then 40 else 0
     if hiss then
         hiss.Volume = 0.35
-        hiss.PlaybackSpeed = if hit then 1.15 else 1
     end
     if os.clock() - lastSpray < SPRAY_EVERY then
         return
     end
     local sprayDt = math.min(os.clock() - lastSpray, Economy.SPRAY_DT_CAP)
     lastSpray = os.clock()
-    if not hit then
+    if not aim then
         return
     end
-    local frame = spun()
-    local reach = Economy.Nozzles[info.nozzleLevel].Radius + 0.4
     local candidates = {}
     for i, c in chunks do
         if c.alive and facing(c.normal) >= info.facingMin then
-            local pos = chunkPose(frame, c)
-            local d = (pos - hit).Magnitude
-            if d <= reach then
+            local d = (projected(c.normal) - aim).Magnitude
+            if d <= Economy.AIM_RADIUS then
                 table.insert(candidates, { id = i, d = d })
             end
         end
@@ -328,15 +331,14 @@ local function spray(dt: number)
     table.sort(candidates, function(a, b)
         return a.d < b.d
     end)
-    local ids = {}
     for k = 1, math.min(#candidates, info.maxChunksPerHit) do
         local c = chunks[candidates[k].id]
-        table.insert(ids, candidates[k].id)
         c.hp = math.max(0.15 * info.chunkHP, c.hp - Economy.Nozzles[info.nozzleLevel].DPS * sprayDt) -- shrink preview only
     end
-    if #ids > 0 then
-        sprayRemote:FireServer({ eggId = info.eggId, chunkIds = ids })
+    if hiss then
+        hiss.PlaybackSpeed = if #candidates > 0 then 1.2 else 1
     end
+    sprayRemote:FireServer({ eggId = info.eggId, aim = { aim.X, aim.Y } })
 end
 
 local function onPopped(eggId: number, id: number)

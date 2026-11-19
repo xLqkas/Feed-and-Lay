@@ -154,7 +154,9 @@ local function full(r: any, egg: BasePart)
     local current = workspace.CurrentCamera.CFrame
     Cam.set("reveal", 30, function(dt)
         local push = 10 - math.min((os.clock() - t0) / 3, 1) -- slow push-in 10%
-        current = Cam.smooth(current, CFrame.lookAt(at + (camPos - at) * push, at), dt, 10)
+        -- look 1 stud above the egg so it sits below the reveal card, not behind it
+        local look = at + Vector3.new(0, 1, 0)
+        current = Cam.smooth(current, CFrame.lookAt(at + (camPos - at) * push, look), dt, 10)
         return current
     end)
     -- hop to the pad (0.5 s) inside the 3 s wobble window

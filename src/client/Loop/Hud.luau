@@ -338,7 +338,7 @@ function Hud.card(compact: boolean): Card
     local f = Kit.frame(screen.root, "RevealCard", C.panel)
     f.AnchorPoint = Vector2.new(0.5, 0.5)
     f.Size = if compact then UDim2.fromOffset(380, 150) else UDim2.fromOffset(560, 260)
-    f.Position = if compact then UDim2.fromScale(0.5, 0.22) else UDim2.fromScale(0.5, 0.3)
+    f.Position = if compact then UDim2.fromScale(0.5, 0.22) else UDim2.fromScale(0.5, 0.24)
     f.ZIndex = 40
     Kit.corner(f, UDim.new(0, Theme.Radius.panel))
     local edge = Kit.stroke(f, C.outline, 6, true)

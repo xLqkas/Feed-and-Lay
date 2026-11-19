@@ -191,7 +191,7 @@ function EggService:_StopWash(_player: any, s: any, _now: number)
     return { ok = true, message = "" }
 end
 
--- SprayHits (UnreliableRemoteEvent): payload { eggId = number, chunkIds = { number } }. No reply.
+-- SprayHits (UnreliableRemoteEvent): payload { eggId = number, aim = { x, y } } (see EggRules.spray). No reply.
 function EggService:sprayHits(player: any, payload: any)
     local s = self.players[player]
     if not s or type(payload) ~= "table" or type(payload.eggId) ~= "number" then
@@ -206,7 +206,7 @@ function EggService:sprayHits(player: any, payload: any)
         if not self.deps.isNear(player, "Washer") then
             return
         end
-        local popped = EggRules.spray(s.data, s.rt, now, payload.eggId, payload.chunkIds)
+        local popped = EggRules.spray(s.data, s.rt, now, payload.eggId, payload.aim)
         for _, id in popped or {} do
             self.deps.send(player, "ChunkPopped", payload.eggId, id)
         end

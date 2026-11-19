@@ -12,8 +12,6 @@ local Economy = if game
 
 local EggRules = {}
 
-local CHUNK_ELEVATION = math.rad(25) -- chunks sit on two rings, 25 degrees above and below the egg's equator
-
 export type Runtime = {
     chargeStart: number?,
     lastThrowAt: number,
@@ -193,15 +191,27 @@ function EggRules.release(
     }
 end
 
--- Unit normal of chunk i (1..n) in the egg's local space. The wash camera looks along -Z, so a chunk
--- faces the camera when its rotated normal has a large +Z part.
+-- Unit normal of chunk i (1..n) in the egg's local space. Chunks come in pairs; each pair sits on its own
+-- height band (projected y from -BAND_SPAN to +BAND_SPAN), so a fixed aim point can only ever reach one
+-- pair while the turntable spins. The wash camera looks along -Z: a chunk faces it when its rotated normal
+-- has a large +Z part.
 function EggRules.chunkNormal(i: number, n: number): { number }
-    local half = n // 2
-    local upper = i <= half
-    local k = (i - 1) % half
-    local az = 2 * math.pi * k / half + (if upper then 0 else math.pi / half)
-    local el = if upper then CHUNK_ELEVATION else -CHUNK_ELEVATION
-    return { math.cos(el) * math.sin(az), math.sin(el), math.cos(el) * math.cos(az) }
+    local npairs = n // 2
+    local c = (i - 1) // 2 -- pair index 0..pairs-1
+    local y = if npairs > 1 then -Economy.BAND_SPAN + 2 * Economy.BAND_SPAN * c / (npairs - 1) else 0
+    local el = math.asin(y)
+    -- shortcut: pair azimuths step by 2/pairs of a turn so neighbouring bands are not side by side;
+    -- needs an odd pair count (3 and 5 today)
+    local az = 2 * math.pi * ((2 * c) % npairs) / npairs
+    local half = math.asin(math.min(Economy.PAIR_HALF_GAP / math.cos(el), 1))
+    az += if i % 2 == 1 then -half else half
+    return { math.cos(el) * math.sin(az), y, math.cos(el) * math.cos(az) }
+end
+
+-- Where a chunk appears in the wash view at a turntable angle: x, y on the unit egg as seen from +Z
+function EggRules.projected(normal: { number }, angleDeg: number): (number, number)
+    local a = math.rad(angleDeg)
+    return normal[1] * math.cos(a) + normal[3] * math.sin(a), normal[2]
 end
 
 -- Turntable angle in degrees at `now` (clients render the same formula with GetServerTimeNow)
@@ -287,26 +297,21 @@ function EggRules.stopWash(data: any, rt: Runtime)
     rt.washingId, rt.inWasher, rt.loadAt = nil, false, nil
 end
 
--- Applies one spray batch. Returns the chunk ids popped by it, or nil and a reason when the batch is rejected.
-function EggRules.spray(data: any, rt: Runtime, now: number, eggId: any, chunkIds: any): ({ number }?, string?)
+-- Applies one spray batch aimed at `aim` = { x, y }: the spray point on the unit egg as seen by the wash
+-- camera (egg-local hit point divided by the egg's radii). Only facing chunks within AIM_RADIUS of the aim
+-- take damage, nearest first, up to the nozzle's chunk cap. Returns the chunk ids popped by it, or nil and a
+-- reason when the batch is rejected.
+function EggRules.spray(data: any, rt: Runtime, now: number, eggId: any, aim: any): ({ number }?, string?)
     local egg = findEgg(data, rt.washingId)
     if not egg or egg.id ~= eggId then
         return nil, "not washing that egg"
     end
-    if type(chunkIds) ~= "table" then
-        return nil, "bad chunk list"
+    if type(aim) ~= "table" then
+        return nil, "bad aim"
     end
-    local count = #chunkIds
-    if count == 0 or count > Economy.Nozzles[data.nozzleLevel].MaxChunksPerHit then
-        return nil, "too many chunks"
-    end
-    local seen = {}
-    for i = 1, count do
-        local id = chunkIds[i]
-        if type(id) ~= "number" or id ~= math.floor(id) or id < 1 or id > egg.chunks or seen[id] then
-            return nil, "bad chunk id"
-        end
-        seen[id] = true
+    local ax, ay = aim[1], aim[2]
+    if type(ax) ~= "number" or type(ay) ~= "number" or not (math.abs(ax) <= 1.5 and math.abs(ay) <= 1.5) then
+        return nil, "bad aim" -- written as "not <=" so NaN is rejected too
     end
 
     local dt = math.min(now - egg.lastHit, Economy.SPRAY_DT_CAP)
@@ -315,18 +320,27 @@ function EggRules.spray(data: any, rt: Runtime, now: number, eggId: any, chunkId
     if dt <= 0 then
         return popped, nil
     end
-    local damage = Economy.Nozzles[data.nozzleLevel].DPS * dt
     local angle = EggRules.turntableAngle(egg, now)
-    for i = 1, count do
-        local id = chunkIds[i]
-        if
-            egg.hp[id] > 0
-            and EggRules.facing(EggRules.chunkNormal(id, egg.chunks), angle) >= Economy.FACING_MIN_DOT
-        then
-            egg.hp[id] = math.max(0, egg.hp[id] - damage)
-            if egg.hp[id] == 0 then
-                table.insert(popped, id)
+    local hits = {}
+    for id = 1, egg.chunks do
+        local normal = EggRules.chunkNormal(id, egg.chunks)
+        if egg.hp[id] > 0 and EggRules.facing(normal, angle) >= Economy.FACING_MIN_DOT then
+            local x, y = EggRules.projected(normal, angle)
+            local d = math.sqrt((x - ax) ^ 2 + (y - ay) ^ 2)
+            if d <= Economy.AIM_RADIUS then
+                table.insert(hits, { id = id, d = d })
             end
+        end
+    end
+    table.sort(hits, function(p, q)
+        return p.d < q.d
+    end)
+    local damage = Economy.Nozzles[data.nozzleLevel].DPS * dt
+    for k = 1, math.min(#hits, Economy.Nozzles[data.nozzleLevel].MaxChunksPerHit) do
+        local id = hits[k].id
+        egg.hp[id] = math.max(0, egg.hp[id] - damage)
+        if egg.hp[id] == 0 then
+            table.insert(popped, id)
         end
     end
     return popped, nil

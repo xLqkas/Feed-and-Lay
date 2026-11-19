@@ -86,31 +86,58 @@ local function throwOnce(player: any, hold: number, clientElapsed: number?)
     return call("ReleaseThrow", player, clientElapsed or hold)
 end
 
--- Sprays like a good client: every 0.1 s, up to the nozzle cap of facing, unpopped chunks
+-- Where chunk `id` of `egg` appears in the wash view right now (the aim point that hits it)
+local function aimAt(egg: any, id: number): { number }
+    local x, y = EggRules.projected(EggRules.chunkNormal(id, egg.chunks), EggRules.turntableAngle(egg, t))
+    return { x, y }
+end
+
+local function washingEgg(s: any): any
+    for _, e in s.data.nest do
+        if e.id == s.rt.washingId then
+            return e
+        end
+    end
+    return nil
+end
+
+-- Sprays like an honest player: every 0.1 s the aim moves (at most AIM_SPEED unit-egg radii per second, a
+-- quick mouse flick) toward the middle of the visible mud pair nearest to it.
+local AIM_SPEED = 6
 local function washUntilDone(player: any, maxSeconds: number): number
     local s = svc:get(player)
     local start = t
     local doneCount = #pushes("WashDone", player)
+    local aim = { 0, 0 }
     while t - start < maxSeconds do
         t += 0.1
-        local egg
-        for _, e in s.data.nest do
-            if e.id == s.rt.washingId then
-                egg = e
-            end
-        end
+        local egg = washingEgg(s)
         if egg then
             local angle = EggRules.turntableAngle(egg, t)
-            local ids = {}
+            local best, bestD = nil, math.huge
             for i = 1, egg.chunks do
-                local facing = EggRules.facing(EggRules.chunkNormal(i, egg.chunks), angle)
-                if egg.hp[i] > 0 and facing >= 0.3 and #ids < Economy.Nozzles[s.data.nozzleLevel].MaxChunksPerHit then
-                    table.insert(ids, i)
+                local n = EggRules.chunkNormal(i, egg.chunks)
+                if egg.hp[i] > 0 and EggRules.facing(n, angle) >= 0.3 then
+                    local p = aimAt(egg, i)
+                    local partner = if i % 2 == 1 then i + 1 else i - 1
+                    if
+                        egg.hp[partner] > 0
+                        and EggRules.facing(EggRules.chunkNormal(partner, egg.chunks), angle) >= 0.3
+                    then
+                        local q = aimAt(egg, partner)
+                        p = { (p[1] + q[1]) / 2, (p[2] + q[2]) / 2 }
+                    end
+                    local d = math.sqrt((p[1] - aim[1]) ^ 2 + (p[2] - aim[2]) ^ 2)
+                    if d < bestD then
+                        best, bestD = p, d
+                    end
                 end
             end
-            if #ids > 0 then
-                svc:sprayHits(player, { eggId = egg.id, chunkIds = ids })
+            if best then
+                local step = math.min(1, AIM_SPEED * 0.1 / math.max(bestD, 1e-9))
+                aim = { aim[1] + (best[1] - aim[1]) * step, aim[2] + (best[2] - aim[2]) * step }
             end
+            svc:sprayHits(player, { eggId = egg.id, aim = aim })
         end
         svc:update()
         if #pushes("WashDone", player) > doneCount then
@@ -236,23 +263,23 @@ do
     local egg = s.data.nest[1]
     local hp0 = egg.hp[1]
     t += 0.1
-    svc:sprayHits(p1, { eggId = egg.id, chunkIds = { 1, 2, 3 } }) -- Lv1 nozzle: max 2 per hit
-    check(egg.hp[1] == hp0, "too many chunks: batch ignored")
+    svc:sprayHits(p1, { eggId = egg.id, aim = { 5, 0 } })
+    check(egg.hp[1] == hp0, "aim off the egg: batch ignored")
     t += 0.1
-    svc:sprayHits(p1, { eggId = egg.id, chunkIds = { 1, 1 } })
-    check(egg.hp[1] == hp0, "duplicate chunk ids: batch ignored")
+    svc:sprayHits(p1, { eggId = egg.id, aim = { 0 / 0, 0 } })
+    check(egg.hp[1] == hp0, "NaN aim: batch ignored")
     t += 0.1
-    svc:sprayHits(p1, { eggId = egg.id + 99, chunkIds = { 1 } })
+    svc:sprayHits(p1, { eggId = egg.id + 99, aim = aimAt(egg, 1) })
     check(egg.hp[1] == hp0, "wrong egg id ignored")
     t += 0.1
     svc:sprayHits(p1, "junk")
-    svc:sprayHits(p1, { eggId = egg.id, chunkIds = { 0.5 } })
+    svc:sprayHits(p1, { eggId = egg.id, aim = "x" })
     check(egg.hp[1] == hp0, "junk payloads ignored")
     svc:update()
     check(#pushes("WashDone", p1) == 0, "nothing done yet")
 
     local took = washUntilDone(p1, 30)
-    check(took >= Economy.MIN_WASH_TIME and took < 15, "tutorial egg washes in a few seconds (" .. took .. " s)")
+    check(took >= 2.5 and took <= 8, "tutorial egg washes in 2.5-8 s with honest aim (" .. took .. " s)")
     check(#pushes("ChunkPopped", p1) == Economy.TUTORIAL_CHUNKS, "one ChunkPopped per chunk")
     local hatch = pushes("HatchResult", p1)
     check(#hatch == 1, "one HatchResult")
@@ -295,27 +322,31 @@ do
         return p, s.data.nest[1]
     end
 
-    -- Chunk 8 (lower ring, azimuth 180 degrees) faces away for the first second
+    -- Aiming at where a chunk on the back would project hits nothing on the back
     local pBack, eggBack = freshWasher("back")
-    local hpBack = eggBack.hp[8]
-    for _ = 1, 10 do
-        t += 0.1
-        svc:sprayHits(pBack, { eggId = eggBack.id, chunkIds = { 8 } })
+    local back
+    for i = 1, eggBack.chunks do
+        if EggRules.facing(EggRules.chunkNormal(i, eggBack.chunks), 0) < -0.3 then
+            back = i
+        end
     end
-    check(eggBack.hp[8] == hpBack, "spraying the back of the egg does nothing")
+    local hpBack = eggBack.hp[back]
+    t += 0.1
+    svc:sprayHits(pBack, { eggId = eggBack.id, aim = aimAt(eggBack, back) })
+    check(eggBack.hp[back] == hpBack, "spraying the back of the egg does nothing")
 
     local p10, egg10 = freshWasher("hz10")
     local start10 = t
     for _ = 1, 5 do
         t += 0.1
-        svc:sprayHits(p10, { eggId = egg10.id, chunkIds = { 1 } })
+        svc:sprayHits(p10, { eggId = egg10.id, aim = aimAt(egg10, 1) })
     end
     local hp10 = egg10.hp[1]
     local p60, egg60 = freshWasher("hz60")
     local start60 = t
     for _ = 1, 30 do
         t += 1 / 60
-        svc:sprayHits(p60, { eggId = egg60.id, chunkIds = { 1 } })
+        svc:sprayHits(p60, { eggId = egg60.id, aim = aimAt(egg60, 1) })
     end
     check(math.abs(t - start60 - 0.5) < 1e-6 and start10 < start60, "both sprayed for 0.5 s")
     check(egg60.hp[1] >= hp10 - 1e-6, "60 Hz spraying washes no faster than 10 Hz")
@@ -337,6 +368,68 @@ do
     end
 end
 
+-- 5b. Aim matters (playtest fix): a parked aim stalls, an honest sweeping aim finishes a Meadow egg at Lv1
+--     in 4-8 s. Fixed aims on a grid over the whole egg, 30 s each at 10 Hz.
+do
+    local function meadowWasher(name: string)
+        local p = { Name = name }
+        local data = SaveSchema.new()
+        data.stats.throws = 10
+        data.pets = { { id = 1, species = "Meadow Bunny", mutation = "Normal", pen = true } }
+        data.nextId = 2
+        svc:add(p, data)
+        throwOnce(p, 0.5)
+        t += Economy.FLIGHT_TIME
+        check(R.StartWash(p).ok, name .. " wash starts")
+        local egg = data.nest[1]
+        check(egg.zone == 1 and egg.chunks == Economy.CHUNKS_PER_EGG, name .. ": Meadow egg, 10 chunks")
+        return p, egg
+    end
+
+    local worst, worstAim = 0, ""
+    for gx = -9, 9, 3 do
+        for gy = -9, 9 do
+            local p, egg = meadowWasher("fixed")
+            for _ = 1, 300 do
+                t += 0.1
+                svc:sprayHits(p, { eggId = egg.id, aim = { gx / 10, gy / 10 } })
+                svc:update()
+            end
+            local popped = 0
+            for i = 1, egg.chunks do
+                if egg.hp[i] == 0 then
+                    popped += 1
+                end
+            end
+            if popped > worst then
+                worst, worstAim = popped, gx / 10 .. "," .. gy / 10
+            end
+            check(#svc:get(p).data.pets == 1, "a fixed aim never finishes the egg")
+            svc:remove(p)
+        end
+    end
+    check(worst <= Economy.CHUNKS_PER_EGG / 3, "a fixed aim pops at most a third of the chunks")
+    print(
+        string.format(
+            "  fixed aim: at most %d / %d chunks popped in 30 s (aim %s)",
+            worst,
+            Economy.CHUNKS_PER_EGG,
+            worstAim
+        )
+    )
+
+    local times = {}
+    for run = 1, 3 do
+        local p = meadowWasher("sweep" .. run)
+        t += run * 1.3 -- different turntable phase each run
+        local took = washUntilDone(p, 30)
+        table.insert(times, string.format("%.1f", took))
+        check(took >= 4 and took <= 8, "sweeping aim washes a Meadow egg at Lv1 in 4-8 s (" .. took .. " s)")
+        svc:remove(p)
+    end
+    print("  sweeping aim: Meadow egg at Lv1 in " .. table.concat(times, " / ") .. " s")
+end
+
 -- 6. Stop washing keeps the half-washed egg in the nest with its chunk HP (session only)
 do
     local p = { Name = "stop" }
@@ -352,7 +445,7 @@ do
     check(R.StartWash(p).ok, "wash after landing")
     local egg = data.nest[1]
     t += 0.1
-    svc:sprayHits(p, { eggId = egg.id, chunkIds = { 1 } })
+    svc:sprayHits(p, { eggId = egg.id, aim = aimAt(egg, 1) })
     local hp = egg.hp[1]
     check(hp < Economy.Zones[egg.zone].ChunkHP, "damage applied")
     t += 1
@@ -361,7 +454,7 @@ do
     check(R.StartWash(p).hp[1] == hp, "restart keeps chunk HP")
     near.Washer = false
     t += 0.1
-    svc:sprayHits(p, { eggId = egg.id, chunkIds = { 1 } })
+    svc:sprayHits(p, { eggId = egg.id, aim = aimAt(egg, 1) })
     check(egg.hp[1] == hp, "spraying from outside the washer ignored")
     near.Washer = true
     svc:remove(p)

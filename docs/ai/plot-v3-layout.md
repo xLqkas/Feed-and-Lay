@@ -75,7 +75,7 @@ Workspace.PlotsV3.Plot_<N>        Model, tag FLPlot, PrimaryPart = Floor
   HatchPad        Model, FLStation, Kind=HatchPad, PrimaryPart = Pedestal
     Pedestal      4-stud disc, 1 tall, at spec (12,0,-6)
       EggPoint    Attachment, egg centre while hatching
-    Beam          translucent neon light column (no collision)
+    Beam          flat neon glow ring on the pedestal top (no collision; was a 14-stud column until 2026-11-19)
     QueueShelf    wooden shelf at spec (16,0,-6)
       Queue1..Queue8   Attachments, queued egg positions
   LiftBench       Model, FLStation, Kind=Lift, PrimaryPart = Ring
@@ -359,8 +359,9 @@ local function build(pivot, accent)
 	local hp = part(hatch, "Pedestal", Vector3.new(1, 4, 4), at(12, 0.5, -6) * VERT, Color3.fromRGB(190, 120, 255), Enum.Material.SmoothPlastic, Enum.PartType.Cylinder)
 	hatch.PrimaryPart = hp
 	att(hp, "EggPoint", pos(12, 2.8, -6))
-	local beam = ghost(part(hatch, "Beam", Vector3.new(14, 3.2, 3.2), at(12, 8, -6) * VERT, Color3.fromRGB(235, 210, 255), Enum.Material.Neon, Enum.PartType.Cylinder))
-	beam.Transparency = 0.8
+	-- playtest fix 2026-11-19: was a 14-stud translucent column that hid the reveal; now a flat glow ring on the pedestal
+	local beam = ghost(part(hatch, "Beam", Vector3.new(0.15, 4.6, 4.6), at(12, 1.06, -6) * VERT, Color3.fromRGB(235, 210, 255), Enum.Material.Neon, Enum.PartType.Cylinder))
+	beam.Transparency = 0.45
 	local shelf = part(hatch, "QueueShelf", Vector3.new(2.4, 1.2, 4.8), at(16, 0.6, -6), Color3.fromRGB(196, 134, 74), Enum.Material.Wood)
 	for i = 1, 8 do
 		att(shelf, "Queue" .. i, pos(15.4 + ((i - 1) // 4) * 1.2, 1.9, -7.8 + ((i - 1) % 4) * 1.2))

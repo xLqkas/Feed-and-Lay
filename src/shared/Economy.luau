@@ -212,6 +212,11 @@ Economy.FLIGHT_TIME = 4.0 -- release to egg in nest
 Economy.TURNTABLE_DEG_PER_SEC = 40
 Economy.FACING_MIN_DOT = 0.2 -- chunk normal . view direction below this takes no damage
 Economy.SPRAY_DT_CAP = 0.15
+-- Wash aim (unit-egg units: 1 = the egg's radius). A spray hits facing chunks within AIM_RADIUS of the aim
+-- point; chunk pairs sit on height bands spread over -BAND_SPAN..BAND_SPAN, PAIR_HALF_GAP either side of a pair.
+Economy.AIM_RADIUS = 0.19
+Economy.BAND_SPAN = 0.8
+Economy.PAIR_HALF_GAP = 0.07
 Economy.WASH_LOAD_DELAY = 0.6 -- next egg hops onto the turntable this long after the last one
 Economy.FULL_REVEAL_TIME = 6.5 -- 3.0 wobble + 2.0 roll + 1.5 hold
 Economy.COMPACT_REVEAL_TIME = 2.5

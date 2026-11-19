@@ -187,3 +187,18 @@ No blockers found.
 - **Q1.** May a tester turn on "Enable Studio Access to API Services" for this place to test a real rejoin? Studio would then read and write the real `EggSanctuary_SaveData_v7` store for the tester's own account.
 - **Q2.** Wash feel (M3): should scrubbing work? Options: bigger aim radius with fewer, wider height bands; bigger mud blobs; or damage from any hit on a facing chunk with the anti-park rule kept by requiring the aim to move. Each changes the tuned 5-9 s wash time and the lune anti-park test.
 - **Q3.** Gamepad (M4): which buttons open Book and Upgrades (for example ButtonY and ButtonX; X is taken by the sign prompts), and should panels select their first button? It cannot be tested through the MCP tools.
+
+## Phase 2: fixes and re-test
+
+| Bug | Fix | Re-test in play mode (fresh profile) |
+|---|---|---|
+| M1 sign prompts during wash, lift, reveal | `src/client/Loop/Menus.luau`: prompts (and the step 10 / 15 auto-open) are off while `Ctx.washing`, `Ctx.lifting` or `Ctx.revealing`. | **PASS**: in the washer all 5 sign prompts `Enabled = false`, E during the wash opens nothing (shot 31); 1.5 s into both full reveals the Weights prompt is off; walking out turns it back on; on the Lift Bench it is off again. |
+| M2 phone meter over the stats | `src/client/Loop/Hud.luau`: the meter is 50 % wide on phone too (was 80 %). | **PASS** at 667 x 375 with every stat row and the THROW button forced visible: meter x 231-564 px, stats end at 218, THROW button x 637-708 above the meter (shot 32). PC unchanged (50 % before and after). |
+| M3 scrubbing does not wash | Not changed: tuning the aim radius, bands or blob size changes the tested 5-9 s wash and the anti-park rule. | Handed back as Q2. |
+| M4 gamepad cannot use the Book / Upgrades panels | Not changed: needs a button mapping decision, and gamepad input cannot be sent through the Studio MCP, so a fix could not be verified. | Handed back as Q3. |
+
+No lune test was added: both fixes are one-line UI conditions on Roblox instances, not pure logic. Checks after the fixes: all lune tests PASS (Economy, EggService, LiftRules, Onboarding, SaveSchema, test_ui_logic); `stylua --check` and `selene` clean on the v3 paths (`src/client/Loop`, `src/client/UI`, `src/server/v3`, `src/shared/Economy.luau`, `tests/*.spec.luau`; the disabled pre-v3 scripts were never formatted); `rojo build` OK; Studio and repo identical, 37 / 37 scripts by length + hash.
+
+Also seen in the re-test run: steps 8 and 9 completed by themselves once the Book claim was made late (state-based onboarding works), and the place's window size changed between runs, which moved click targets (test artefact; clicks now go to the buttons' measured positions).
+
+Still open: minors m1-m12, M3 (Q2), M4 (Q3), and the live rejoin (Q1).

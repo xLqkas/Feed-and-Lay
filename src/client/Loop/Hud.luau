@@ -519,7 +519,7 @@ Kit.onLayout(screen, function(info)
     placeColumns(false)
     stats.Position = UDim2.new(0, 20, if compact then 0.47 else 0.62, 0)
     throwButton.Position = UDim2.new(1, -40, 1, -300)
-    meter.Size = if compact then UDim2.new(0.8, 0, 0, 52) else UDim2.new(0.5, 0, 0, 52)
+    meter.Size = UDim2.new(0.5, 0, 0, 52) -- phone too: a wider meter runs over the stats column
     meter.Position = if compact then UDim2.fromScale(0.5, 0.72) else UDim2.fromScale(0.5, 0.86)
     hint.Position = UDim2.new(1, -24, 0.97, 0)
     eatRow.Position = if compact then UDim2.new(0.5, 0, 0.72, -110) else UDim2.new(0.5, 0, 0.86, -110)

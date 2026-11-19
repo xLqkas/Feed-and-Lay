@@ -465,11 +465,13 @@ function Menus.init(state: any)
         while true do
             task.wait(0.25)
             local step = player:GetAttribute("TutorialStep") or 0
+            -- the Washer and Weights signs are within prompt range of their stations: no panel over a station view
+            local busy = Ctx.washing or Ctx.lifting or Ctx.revealing
             for _, prompt in prompts do
-                prompt.Enabled = step >= 10
+                prompt.Enabled = step >= 10 and not busy
             end
             local auto = AUTO[step]
-            if auto and not opened[auto] and Ctx.distanceTo(auto) <= 5 then
+            if auto and not busy and not opened[auto] and Ctx.distanceTo(auto) <= 5 then
                 opened[auto] = true
                 Sfx.play("tick")
                 openUpgrades(((Ctx.plot :: Model):FindFirstChild(auto) :: Instance):GetAttribute("Tab"))

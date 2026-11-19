@@ -103,7 +103,10 @@ function Pen.makePet(species: string, mutation: string, rarity: string): Model
     name.TextScaled = true
     name.FontFace = Theme.Fonts.title
     name.TextColor3 = Color3.new(1, 1, 1)
-    name.TextStrokeTransparency = 0.3
+    local stroke = Instance.new("UIStroke") -- thick dark stroke like every HUD text (ui-style-spec C6)
+    stroke.Color = Theme.Colors.outline
+    stroke.Thickness = 2.5
+    stroke.Parent = name
     name.Parent = gui
     local word = name:Clone()
     word.Position = UDim2.fromScale(0, 0.55)

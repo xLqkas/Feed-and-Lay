@@ -51,7 +51,7 @@ local function stopCharge()
         chargeSound = nil
     end
     Cam.fov(70, 0.2)
-    local press = Hud.throwButton:FindFirstChild("PressScale") :: UIScale?
+    local press = Hud.throwButton:FindFirstChild("MotionScale") :: UIScale?
     if press then
         press.Scale = 1
     end
@@ -85,7 +85,7 @@ local function begin()
     Hud.meter.Visible = true
     chargeSound = Sfx.loop("charge", 0.5)
     Cam.fov(66, 0.4)
-    local press = Hud.throwButton:FindFirstChild("PressScale") :: UIScale?
+    local press = Hud.throwButton:FindFirstChild("MotionScale") :: UIScale?
     if press then
         press.Scale = 0.92
     end

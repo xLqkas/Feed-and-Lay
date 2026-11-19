@@ -1,24 +1,30 @@
 --!strict
--- Feed and Lay UI kit: Luau port of Bobux Gang src/client/ui.ts (see docs/ai/design-v3.md 7.1, 7.2 and 8).
--- Every screen is built with these helpers; colours and sizes come from Theme only.
+-- Feed and Lay UI kit (docs/ai/ui-style-spec.md). Every screen is built with these helpers; colours and sizes
+-- come from Theme, art from ImageIds, and every animation from Motion (no tween values here).
 -- Offsets are reference pixels at 1080p: Kit.screen puts one UIScale on a root frame sized to the screen.
+-- Gvesster icons (all Kit icons) are never tinted; SunGraphica art (panels, ribbons, buttons, bars) may be.
 
 local Lighting = game:GetService("Lighting")
 local Players = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 
+local ImageIds = require(script.Parent.ImageIds)
 local Logic = require(script.Parent.Logic)
+local Motion = require(script.Parent.Motion)
 local Theme = require(script.Parent.Theme)
 
 local C = Theme.Colors
+local T = Theme.TextSize
 local Kit = {}
 
 export type Screen = {
     gui: ScreenGui,
     root: Frame,
     scale: UIScale,
-    toasts: Frame,
+    toasts: Frame, -- gain / error lane, bottom centre
+    announce: Frame, -- announce lane, top centre
     banner: TextLabel?,
+    goal: Frame?,
     info: Logic.LayoutInfo,
     listeners: { (Logic.LayoutInfo) -> () },
     toastSerial: number,
@@ -30,25 +36,55 @@ export type Panels = {
     shade: Frame,
     blur: BlurEffect,
     serial: number,
+    listeners: { (string?) -> () },
 }
 
 export type Pill = { frame: Frame, icon: ImageLabel, value: TextLabel, rate: TextLabel, number: NumberValue }
-export type Bar = { frame: Frame, fill: Frame, label: TextLabel }
+export type Bar = { frame: GuiObject, fill: GuiObject, label: TextLabel }
 export type Reply = { ok: boolean, message: string }
+export type Tile = { button: TextButton, art: ImageLabel, icon: ImageLabel, label: TextLabel, dot: Frame }
+export type Card = {
+    frame: Frame,
+    viewport: ViewportFrame,
+    rarity: TextLabel,
+    title: TextLabel,
+    income: TextLabel,
+    count: TextLabel,
+    check: ImageLabel,
+    dot: Frame,
+}
 
-local function tween(
-    target: Instance,
-    seconds: number,
-    goal: { [string]: any },
-    style: Enum.EasingStyle?,
-    direction: Enum.EasingDirection?
-): Tween
-    local info = TweenInfo.new(seconds, style or Enum.EasingStyle.Quad, direction or Enum.EasingDirection.Out)
-    local t = TweenService:Create(target, info, goal)
-    t:Play()
-    return t
+-- Every uploaded image by name (ImageIds groups flattened), and source heights for SliceScale.
+local ART: { [string]: string } = {}
+for group, entries in ImageIds :: any do
+    if group ~= "SliceCenter" then
+        for name, id in entries do
+            ART[name] = id
+        end
+    end
 end
-Kit.tween = tween
+local SOURCE_HEIGHT: { [string]: number } = {
+    panelTall = 896,
+    panelWide = 780,
+    panelSmall = 406,
+    cardCream = 352,
+    slotDark = 159,
+    cardBrown = 227,
+    buttonPriceGreen = 95,
+    buttonPriceRed = 95,
+    buttonSquareBlue = 159,
+    tabSelected = 171,
+    tabDeselected = 171,
+    iconTile = 113,
+    barTrack = 43,
+    barFill = 21,
+}
+
+function Kit.art(name: string): string
+    local id = ART[name]
+    assert(id, "unknown image " .. name)
+    return id
+end
 
 local function corner(object: GuiObject, radius: UDim)
     local c = Instance.new("UICorner")
@@ -61,6 +97,7 @@ local function stroke(object: GuiObject, color: Color3, thickness: number, borde
     s.Color = color
     s.Thickness = thickness
     s.ApplyStrokeMode = if border then Enum.ApplyStrokeMode.Border else Enum.ApplyStrokeMode.Contextual
+    s.LineJoinMode = Enum.LineJoinMode.Round
     s.Parent = object
     return s
 end
@@ -69,20 +106,13 @@ Kit.corner = corner
 Kit.stroke = stroke
 
 local PILL = UDim.new(0.5, 0)
-local BUTTON_RADIUS = UDim.new(0, Theme.Radius.button)
 
--- Scale 1 -> peak -> 1 with a springy settle (reward pop, counter bump, banner change).
 function Kit.pop(object: GuiObject, peak: number?)
-    local scale = object:FindFirstChild("PopScale") :: UIScale?
-    if not scale then
-        local s = Instance.new("UIScale")
-        s.Name = "PopScale"
-        s.Parent = object
-        scale = s
-    end
-    assert(scale, "PopScale")
-    scale.Scale = peak or 1.15
-    tween(scale, Theme.Motion.pop, { Scale = 1 }, Enum.EasingStyle.Back)
+    Motion.pop(object, peak)
+end
+
+function Kit.shake(object: GuiObject)
+    Motion.shake(object)
 end
 
 function Kit.frame(parent: Instance, name: string, color: Color3?): Frame
@@ -95,8 +125,34 @@ function Kit.frame(parent: Instance, name: string, color: Color3?): Frame
     return f
 end
 
--- Fredoka text with the dark "paper" stroke. Sized by the caller; TextScaled keeps long text inside its box.
-function Kit.text(parent: Instance, value: string, textSize: number, color: Color3?, font: Font?): TextLabel
+-- Image by name (ImageIds). Sliced art gets SliceCenter and a SliceScale for `height` (reference px).
+function Kit.image(parent: Instance, name: string, height: number?): ImageLabel
+    local i = Instance.new("ImageLabel")
+    i.Name = name
+    i.BackgroundTransparency = 1
+    i.Image = Kit.art(name)
+    local center = (ImageIds.SliceCenter :: any)[name]
+    if center then
+        i.ScaleType = Enum.ScaleType.Slice
+        i.SliceCenter = center
+        local source = SOURCE_HEIGHT[name] or 170
+        i.SliceScale = if height then math.clamp(height / source, 0.1, 1) else 0.5
+    else
+        i.ScaleType = Enum.ScaleType.Fit
+    end
+    i.Parent = parent
+    return i
+end
+
+-- Fredoka text. HUD text gets the dark stroke (C6); pass strokeSize 0 for text on cream panels.
+function Kit.text(
+    parent: Instance,
+    value: string,
+    textSize: number,
+    color: Color3?,
+    font: Font?,
+    strokeSize: number?
+): TextLabel
     local t = Instance.new("TextLabel")
     t.Name = "Text"
     t.BackgroundTransparency = 1
@@ -108,7 +164,10 @@ function Kit.text(parent: Instance, value: string, textSize: number, color: Colo
     local limit = Instance.new("UITextSizeConstraint")
     limit.MaxTextSize = textSize
     limit.Parent = t
-    stroke(t, C.outline, if textSize >= 28 then Theme.Stroke.text else 2)
+    local thickness = strokeSize or (if textSize >= 40 then Theme.Stroke.banner elseif textSize >= 24 then 3 else 2)
+    if thickness > 0 then
+        stroke(t, C.outline, thickness)
+    end
     t.Parent = parent
     return t
 end
@@ -127,6 +186,20 @@ local function fit(object: Instance, info: Logic.LayoutInfo)
     end
 end
 
+local function lane(root: Frame, name: string, bottom: boolean): Frame
+    local f = Kit.frame(root, name)
+    f.AnchorPoint = Vector2.new(0.5, if bottom then 1 else 0)
+    f.AutomaticSize = Enum.AutomaticSize.Y
+    f.ZIndex = 70 -- above panels, so purchase errors stay readable
+    local list = Instance.new("UIListLayout")
+    list.SortOrder = Enum.SortOrder.LayoutOrder
+    list.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    list.VerticalAlignment = if bottom then Enum.VerticalAlignment.Bottom else Enum.VerticalAlignment.Top
+    list.Padding = UDim.new(0, Theme.Space.xs)
+    list.Parent = f
+    return f
+end
+
 -- Creates a ScreenGui in PlayerGui with a scaled root. Re-lays out whenever the real viewport changes.
 function Kit.screen(name: string, displayOrder: number?): Screen
     local gui = Instance.new("ScreenGui")
@@ -143,22 +216,14 @@ function Kit.screen(name: string, displayOrder: number?): Screen
     local scale = Instance.new("UIScale")
     scale.Parent = root
 
-    local toasts = Kit.frame(root, "Toasts")
-    toasts.AnchorPoint = Vector2.new(0.5, 0)
-    toasts.AutomaticSize = Enum.AutomaticSize.Y
-    toasts.ZIndex = 70 -- above panels, so purchase errors stay readable
-    local list = Instance.new("UIListLayout")
-    list.SortOrder = Enum.SortOrder.LayoutOrder
-    list.HorizontalAlignment = Enum.HorizontalAlignment.Center
-    list.Padding = UDim.new(0, Theme.Space.sm)
-    list.Parent = toasts
-
     local screen: Screen = {
         gui = gui,
         root = root,
         scale = scale,
-        toasts = toasts,
+        toasts = lane(root, "Toasts", true),
+        announce = lane(root, "Announce", false),
         banner = nil,
+        goal = nil,
         info = Logic.layoutFor(1920, 1080),
         listeners = {},
         toastSerial = 0,
@@ -180,13 +245,18 @@ function Kit.screen(name: string, displayOrder: number?): Screen
             then UDim2.fromOffset(size.X / info.scale, size.Y / info.scale)
             else UDim2.fromScale(1 / info.scale, 1 / info.scale)
         root.ClipsDescendants = emulated
-        -- Phone banner sits higher than the spec's 0.12 so it clears the top-left Coins counter.
-        local bannerY = if info.compact then 0.05 else 0.10
+        -- spec 2.1: objective (0.5, 0.10) PC / 0.12 phone, announce 0.17, gain lane 0.80 PC / 0.70 phone
+        local bannerY = if info.compact then 0.12 else 0.10
         if screen.banner then
             screen.banner.Position = UDim2.fromScale(0.5, bannerY)
         end
-        toasts.Position = UDim2.fromScale(0.5, if info.compact then 0.20 else 0.15)
-        toasts.Size = UDim2.fromOffset(info.toastWidth, 0)
+        if screen.goal then
+            screen.goal.Position = UDim2.new(0.5, 0, bannerY, 34)
+        end
+        screen.announce.Position = UDim2.new(0.5, 0, if info.compact then 0.12 else 0.10, 70)
+        screen.announce.Size = UDim2.fromOffset(info.toastWidth, 0)
+        screen.toasts.Position = UDim2.fromScale(0.5, if info.compact then 0.70 else 0.80)
+        screen.toasts.Size = UDim2.fromOffset(info.toastWidth, 0)
         for _, d in root:GetDescendants() do
             fit(d, info)
         end
@@ -211,89 +281,142 @@ function Kit.onLayout(screen: Screen, callback: (Logic.LayoutInfo) -> ())
     task.spawn(callback, screen.info)
 end
 
--- 3D button: darker base strip, face on top. Press: face drops and the button shrinks; hover brightens.
-function Kit.button(parent: Instance, label: string, role: Theme.ButtonRole, size: UDim2): (TextButton, TextLabel)
-    local colors = Theme.Buttons[role]
-    local depth = Theme.ButtonDepth
-    local button = Instance.new("TextButton")
-    button.Name = label
-    button.Text = ""
-    button.AutoButtonColor = false
-    button.BorderSizePixel = 0
-    button.BackgroundColor3 = colors.base
-    button.Size = size
-    corner(button, BUTTON_RADIUS)
-    if size.Y.Scale == 0 then
-        button:SetAttribute("FLBaseHeight", size.Y.Offset)
-    end
-    local selection = stroke(button, C.outline, 3, true)
-
-    local face = Instance.new("TextLabel")
-    face.Name = "Face"
-    face.Size = UDim2.new(1, 0, 1, -depth)
-    face.BorderSizePixel = 0
-    face.BackgroundColor3 = colors.face
-    face.Text = label
-    face.FontFace = Theme.Fonts.title
-    face.TextColor3 = colors.text
-    face.TextScaled = true
-    corner(face, BUTTON_RADIUS)
-    local limit = Instance.new("UITextSizeConstraint")
-    limit.MaxTextSize = Theme.TextSize.heading
-    limit.Parent = face
-    local pad = Instance.new("UIPadding")
-    pad.PaddingLeft = UDim.new(0, Theme.Space.md)
-    pad.PaddingRight = UDim.new(0, Theme.Space.md)
-    pad.PaddingTop = UDim.new(0, Theme.Space.sm)
-    pad.PaddingBottom = UDim.new(0, Theme.Space.sm)
-    pad.Parent = face
-    if colors.text == C.paper then
-        stroke(face, C.outline, 2)
-    end
-    face.Parent = button
-
-    local press = Instance.new("UIScale")
-    press.Name = "PressScale"
-    press.Parent = button
-    local hovered = false
-    local function release()
-        tween(press, Theme.Motion.release, { Scale = 1 }, Enum.EasingStyle.Back)
-        tween(face, Theme.Motion.release, { Position = UDim2.new() })
+-- Press / hover / release motion for any button (spec 4.1). `face` drops 4 px while pressed.
+local function pressable(button: GuiButton, face: GuiObject?)
+    local s = Motion.scale(button)
+    local hovered, down = false, false
+    local function rest()
+        down = false
+        Motion.play(s, "buttonRelease", { Scale = if hovered then 1.04 else 1 })
+        if face then
+            Motion.play(face, "buttonRelease", { Position = UDim2.new() })
+        end
     end
     button.InputBegan:Connect(function(input)
         local kind = input.UserInputType
+        if button:GetAttribute("FLRole") == "disabled" then
+            return
+        end
         if
             kind == Enum.UserInputType.MouseButton1
             or kind == Enum.UserInputType.Touch
             or input.KeyCode == Enum.KeyCode.ButtonA
         then
-            tween(press, Theme.Motion.press, { Scale = 0.94 })
-            tween(face, Theme.Motion.press, { Position = UDim2.fromOffset(0, depth) })
+            down = true
+            Motion.play(s, "buttonPress", { Scale = Motion.get("buttonPress").To.Scale or 0.94 })
+            if face then
+                Motion.play(face, "buttonPress", { Position = UDim2.fromOffset(0, 4) })
+            end
         end
     end)
-    button.InputEnded:Connect(release)
+    button.InputEnded:Connect(function()
+        if down then
+            rest()
+        end
+    end)
     button.MouseEnter:Connect(function()
+        if UserInputService.TouchEnabled and not UserInputService.MouseEnabled then
+            return
+        end
         hovered = true
-        tween(face, Theme.Motion.hover, { BackgroundColor3 = colors.face:Lerp(C.paper, 0.12) })
+        if not down then
+            Motion.play(s, "buttonHover", { Scale = Motion.get("buttonHover").To.Scale or 1.04 })
+        end
     end)
     button.MouseLeave:Connect(function()
-        if hovered then
-            hovered = false
-            tween(face, Theme.Motion.hover, { BackgroundColor3 = colors.face })
-        end
-        release()
+        hovered = false
+        rest()
     end)
+end
+Kit.pressable = pressable
+
+-- Paints a button for a role: SunGraphica art where it exists, else code-drawn face on a darker base.
+function Kit.setRole(button: TextButton, role: Theme.ButtonRole)
+    local colors = Theme.Buttons[role]
+    local artName = if Theme.UseArt then Theme.ButtonArt[role] else nil
+    local art = button:FindFirstChild("Art") :: ImageLabel
+    local face = button:FindFirstChild("Face") :: TextLabel
+    local depth = if artName then 0 else Theme.ButtonDepth
+    button:SetAttribute("FLRole", role)
+    art.Visible = artName ~= nil
+    if artName then
+        art.Image = Kit.art(artName)
+        art.SliceCenter = (ImageIds.SliceCenter :: any)[artName]
+        local h = button:GetAttribute("FLBaseHeight")
+        art.SliceScale = math.clamp((if typeof(h) == "number" then h else 64) / (SOURCE_HEIGHT[artName] or 170), 0.1, 1)
+    end
+    button.BackgroundTransparency = if artName then 1 else 0
+    button.BackgroundColor3 = colors.base
+    face.BackgroundTransparency = if artName then 1 else 0
+    face.BackgroundColor3 = colors.face
+    face.Size = UDim2.new(1, 0, 1, if artName then -6 else -depth)
+    face.TextColor3 = colors.text
+    local s = face:FindFirstChild("TextStroke") :: UIStroke
+    s.Enabled = colors.text ~= C.ink
+    s.Color = colors.base:Lerp(Color3.new(), 0.45)
+    button.AutoButtonColor = false
+end
+
+-- 3D button: art (or code-drawn base + face), white Fredoka label with a dark stroke, press motion.
+function Kit.button(parent: Instance, label: string, role: Theme.ButtonRole, size: UDim2): (TextButton, TextLabel)
+    local button = Instance.new("TextButton")
+    button.Name = label
+    button.Text = ""
+    button.BorderSizePixel = 0
+    button.Size = size
+    corner(button, UDim.new(0, Theme.Radius.button))
+    if size.Y.Scale == 0 then
+        button:SetAttribute("FLBaseHeight", size.Y.Offset)
+    end
+    local art = Instance.new("ImageLabel")
+    art.Name = "Art"
+    art.BackgroundTransparency = 1
+    art.Size = UDim2.fromScale(1, 1)
+    art.ScaleType = Enum.ScaleType.Slice
+    art.Parent = button
+
+    local face = Instance.new("TextLabel")
+    face.Name = "Face"
+    face.BorderSizePixel = 0
+    face.Text = label
+    face.FontFace = Theme.Fonts.title
+    face.TextScaled = true
+    face.ZIndex = 2
+    corner(face, UDim.new(0, Theme.Radius.button))
+    local limit = Instance.new("UITextSizeConstraint")
+    limit.MaxTextSize = T.button
+    limit.Parent = face
+    local pad = Instance.new("UIPadding")
+    pad.PaddingLeft = UDim.new(0, Theme.Space.lg)
+    pad.PaddingRight = UDim.new(0, Theme.Space.lg)
+    pad.PaddingTop = UDim.new(0, Theme.Space.sm)
+    pad.PaddingBottom = UDim.new(0, Theme.Space.sm)
+    pad.Parent = face
+    local s = stroke(face, C.outline, 3)
+    s.Name = "TextStroke"
+    face.Parent = button
+    Kit.setRole(button, role)
+
+    local selection = stroke(button, C.outline, 0, true)
     button.SelectionGained:Connect(function()
+        selection.Thickness = 3
         selection.Color = C.paper
     end)
     button.SelectionLost:Connect(function()
-        selection.Color = C.outline
+        selection.Thickness = 0
     end)
+    pressable(button, face)
     button.Parent = parent
     return button, face
 end
 
--- Square icon button. With a placeholder image ("") the label text is shown instead.
+-- Square icon button on square art (buttonSquare*): icon 70 %, label used only when there is no icon.
+local SQUARE_ART: { [string]: string } = {
+    primary = "buttonSquareGreen",
+    danger = "buttonSquareRed",
+    reward = "buttonSquareYellow",
+    info = "buttonSquareBlue",
+}
 function Kit.iconButton(
     parent: Instance,
     image: string,
@@ -306,86 +429,240 @@ function Kit.iconButton(
     local ratio = Instance.new("UIAspectRatioConstraint")
     ratio.DominantAxis = Enum.DominantAxis.Height -- stays square when the touch minimum grows the height
     ratio.Parent = button
+    local square = SQUARE_ART[role]
+    if Theme.UseArt and square then
+        local art = button:FindFirstChild("Art") :: ImageLabel
+        art.Visible = true
+        art.Image = Kit.art(square)
+        art.SliceCenter = (ImageIds.SliceCenter :: any)[square]
+        art.SliceScale = side / 163
+        button.BackgroundTransparency = 1
+        face.BackgroundTransparency = 1
+    end
     if image ~= "" then
         face.Text = ""
         local icon = Instance.new("ImageLabel")
         icon.Name = "Icon"
         icon.BackgroundTransparency = 1
-        icon.Size = UDim2.fromScale(1, 1)
+        icon.AnchorPoint = Vector2.new(0.5, 0.5)
+        icon.Position = UDim2.fromScale(0.5, 0.5)
+        icon.Size = UDim2.fromScale(0.7, 0.7)
         icon.ScaleType = Enum.ScaleType.Fit
         icon.Image = image
+        icon.ZIndex = 3
         icon.Parent = face
     end
     return button
 end
 
-local function icon(parent: Instance, image: string, fallback: Color3, side: number): ImageLabel
-    local i = Instance.new("ImageLabel")
-    i.Name = "Icon"
-    i.Image = image
-    i.ScaleType = Enum.ScaleType.Fit
-    i.Size = UDim2.fromOffset(side, side)
-    i.BorderSizePixel = 0
-    i.BackgroundColor3 = fallback
-    i.BackgroundTransparency = if image == "" then 0 else 1 -- coloured disc until art is uploaded
-    corner(i, PILL)
-    if image == "" then
-        stroke(i, C.outline, 3, true)
-    end
-    i.Parent = parent
-    return i
+-- Close button: the Gvesster close icon itself (a red square with an X), press motion, 56 px min touch.
+function Kit.closeButton(parent: Instance, side: number): ImageButton
+    local b = Instance.new("ImageButton")
+    b.Name = "Close"
+    b.BackgroundTransparency = 1
+    b.Image = Theme.Images.close
+    b.ScaleType = Enum.ScaleType.Fit
+    b.Size = UDim2.fromOffset(side, side)
+    b.ZIndex = 8
+    b:SetAttribute("FLBaseHeight", side)
+    local ratio = Instance.new("UIAspectRatioConstraint")
+    ratio.DominantAxis = Enum.DominantAxis.Height
+    ratio.Parent = b
+    pressable(b, nil)
+    b.Parent = parent
+    return b
 end
 
--- Objective banner (top-centre, no panel). Calling again changes the text with a pop.
+-- Notification dot (spec 4.7): red circle, white rim, count or "!", pulses while shown.
+function Kit.dot(parent: Instance): Frame
+    local d = Kit.frame(parent, "Dot", C.danger)
+    d.AnchorPoint = Vector2.new(0.5, 0.5)
+    d.Position = UDim2.fromScale(1, 0)
+    d.Size = UDim2.fromOffset(34, 34)
+    d.ZIndex = 9
+    d.Visible = false
+    corner(d, PILL)
+    stroke(d, C.paper, 3, true)
+    local t = Kit.text(d, "", 22, C.paper, nil, 2)
+    t.Name = "Count"
+    t.Size = UDim2.fromScale(1, 1)
+    t.ZIndex = 10
+    return d
+end
+
+local pulses: { [Frame]: () -> () } = {}
+-- n > 0 shows the count, "!" shows the exclamation, nil / 0 hides it.
+function Kit.setDot(dot: Frame, n: number | string | nil)
+    local show = n ~= nil and n ~= 0
+    local count = dot:FindFirstChild("Count") :: TextLabel
+    count.Text = if show then tostring(n) else ""
+    if show and not dot.Visible then
+        dot.Visible = true
+        Motion.scaleTo(dot, "newButton")
+        local stop = pulses[dot]
+        if stop then
+            stop()
+        end
+        task.delay(0.35, function()
+            if dot.Visible then
+                pulses[dot] = Motion.pulse(dot)
+            end
+        end)
+    elseif not show and dot.Visible then
+        dot.Visible = false
+        local stop = pulses[dot]
+        if stop then
+            stop()
+            pulses[dot] = nil
+        end
+    end
+end
+
+-- HUD menu tile (spec 2.2): blue square art, icon overhanging the top, label on the bottom edge, dot.
+function Kit.menuTile(parent: Instance, label: string, image: string): Tile
+    local button = Instance.new("TextButton")
+    button.Name = label
+    button.Text = ""
+    button.AutoButtonColor = false
+    button.BackgroundColor3 = C.info
+    button.BackgroundTransparency = if Theme.UseArt then 1 else 0
+    button.Size = UDim2.fromOffset(104, 104)
+    corner(button, UDim.new(0, 20))
+    if not Theme.UseArt then
+        stroke(button, C.outline, 4, true)
+    end
+    local art = Kit.image(button, "buttonSquareBlue", 104)
+    art.Name = "Art"
+    art.Size = UDim2.fromScale(1, 1)
+    art.Visible = Theme.UseArt
+    local icon = Instance.new("ImageLabel")
+    icon.Name = "Icon"
+    icon.BackgroundTransparency = 1
+    icon.Image = image
+    icon.ScaleType = Enum.ScaleType.Fit
+    icon.AnchorPoint = Vector2.new(0.5, 0.5)
+    icon.Position = UDim2.new(0.5, 0, 0.5, -20) -- overhangs the top edge by ~10 px (spec 2.2)
+    icon.Size = UDim2.fromOffset(92, 92)
+    icon.ZIndex = 2
+    icon.Parent = button
+    local text = Kit.text(button, label, 26, C.paper, nil, 3)
+    text.Name = "Label"
+    text.AnchorPoint = Vector2.new(0.5, 0.5)
+    text.Position = UDim2.fromScale(0.5, 1)
+    text.Size = UDim2.fromOffset(124, 32)
+    text.ZIndex = 3
+    local dot = Kit.dot(button)
+    pressable(button, nil)
+    button.Parent = parent
+    return { button = button, art = art, icon = icon, label = text, dot = dot }
+end
+
+-- Open state while its panel is shown: darker body, icon 1.08.
+function Kit.setTileOpen(tile: Tile, open: boolean)
+    tile.art.ImageColor3 = if open then Color3.fromHex("B4B4B4") else Color3.new(1, 1, 1)
+    Motion.play(Motion.scale(tile.icon), "tabSwitch", { Scale = if open then 1.08 else 1 })
+end
+
+-- Shows a tile that just unlocked: scale 0 -> 1.15 -> 1 (spec 5 "New HUD button").
+function Kit.revealTile(tile: Tile)
+    Motion.scaleTo(tile.button, "newButton")
+end
+
+-- Tutorial pointer (spec 4.6): cursor image at the target's lower-right, bobbing toward it.
+function Kit.pointer(target: GuiObject): ImageLabel
+    local p = Instance.new("ImageLabel")
+    p.Name = "Pointer"
+    p.BackgroundTransparency = 1
+    p.Image = Kit.art("cursor")
+    p.ScaleType = Enum.ScaleType.Fit
+    p.Size = UDim2.fromOffset(72, 72)
+    p.Position = UDim2.new(1, -12, 1, -12)
+    p.ZIndex = 12
+    p.Visible = false
+    p.Parent = target
+    Motion.bob(p, "arrowBob", Vector2.new(-0.7, -0.7))
+    return p
+end
+
+-- Objective line (spec 2.4): old line fades up, new line pops in. nil hides it.
 function Kit.banner(screen: Screen, value: string): TextLabel
     local banner = screen.banner
+    local y = if screen.info.compact then 0.12 else 0.10
     if not banner then
-        local b = Kit.text(screen.root, value, Theme.TextSize.title)
+        local b = Kit.text(screen.root, value, T.banner, C.paper, nil, Theme.Stroke.banner)
         b.Name = "Banner"
         b.AnchorPoint = Vector2.new(0.5, 0.5)
-        b.Size = UDim2.new(0.9, 0, 0, 56)
+        b.Size = UDim2.new(0.7, 0, 0, 52)
+        b.ZIndex = 20
+        local limit = b:FindFirstChildOfClass("UITextSizeConstraint") :: UITextSizeConstraint
+        limit.MinTextSize = 28
         screen.banner = b
         banner = b
+    elseif banner.Text ~= value and banner.Visible and not Motion.reduced() then
+        local ghost = banner:Clone()
+        ghost.Name = "BannerOut"
+        ghost.Parent = screen.root
+        Motion.play(ghost, "objectiveOut", { Position = ghost.Position + UDim2.fromOffset(0, -10) })
+        Motion.fadeOut(ghost, "objectiveOut", true)
     end
     assert(banner, "Banner")
     banner.Text = value
-    banner.Position = UDim2.fromScale(0.5, if screen.info.compact then 0.05 else 0.10)
-    Kit.pop(banner, 0.6)
+    banner.Position = UDim2.fromScale(0.5, y)
+    Motion.scaleTo(banner, "objectiveIn")
     return banner
 end
 
-local TOAST_COLORS: { [string]: Color3 } = { gain = C.money, error = C.danger, announce = C.reward }
+-- Count goal under the objective ("52 / 80"): mini bar 220 x 14 (spec 2.4). nil target hides it.
+function Kit.bannerGoal(screen: Screen, current: number?, target: number?)
+    local goal = screen.goal
+    if not goal then
+        local g = Kit.frame(screen.root, "Goal")
+        g.AnchorPoint = Vector2.new(0.5, 0)
+        g.Size = UDim2.fromOffset(330, 28)
+        g.ZIndex = 20
+        local bar = Kit.progressBar(g, UDim2.fromOffset(220, 18), nil)
+        bar.frame.Name = "Bar"
+        bar.label.Visible = false
+        local text = Kit.text(g, "", 22, C.paper, nil, 2)
+        text.Name = "Count"
+        text.AnchorPoint = Vector2.new(0, 0.5)
+        text.Position = UDim2.new(0, 230, 0.5, 0)
+        text.Size = UDim2.fromOffset(100, 26)
+        text.TextXAlignment = Enum.TextXAlignment.Left
+        screen.goal = g
+        goal = g
+    end
+    assert(goal, "Goal")
+    goal.Position = UDim2.new(0.5, 0, if screen.info.compact then 0.12 else 0.10, 34)
+    goal.Visible = current ~= nil and target ~= nil
+    if current and target then
+        local bar = goal:FindFirstChild("Bar") :: GuiObject
+        local fill = bar:FindFirstChild("Fill") :: GuiObject
+        Motion.play(fill, "fill", { Size = UDim2.fromScale(math.clamp(current / target, 0, 1), 1) })
+        local count = goal:FindFirstChild("Count") :: TextLabel
+        count.Text = Logic.formatNumber(math.min(current, target)) .. " / " .. Logic.formatNumber(target)
+    end
+end
 
--- Toast under the banner: green gain, red error, gold announce. 3 s; oldest drops past 3 (PC) / 2 (phone).
+-- Toasts (spec 4.8): gain / error text above the hotbar, announce text under the objective. No background.
+local TOAST_COLORS: { [string]: Color3 } = { gain = C.money, error = C.danger, announce = C.announce }
 function Kit.toast(screen: Screen, message: string, kind: "gain" | "error" | "announce")
-    local color = TOAST_COLORS[kind]
+    local target = if kind == "announce" then screen.announce else screen.toasts
     screen.toastSerial += 1
-    local label = Instance.new("TextLabel")
+    local size = if kind == "announce" then T.heading else T.button
+    local label = Kit.text(target, message, size, TOAST_COLORS[kind], nil, 3)
     label.Name = "Toast"
     label.LayoutOrder = screen.toastSerial
+    label.TextScaled = false
+    label.TextSize = size
+    label.TextWrapped = true
     label.Size = UDim2.fromScale(1, 0)
     label.AutomaticSize = Enum.AutomaticSize.Y
-    label.BackgroundColor3 = C.panel
-    label.Text = message
-    label.TextWrapped = true
-    label.FontFace = Theme.Fonts.title
-    label.TextSize = Theme.TextSize.heading
-    label.TextColor3 = color
     label.ZIndex = 70
-    corner(label, BUTTON_RADIUS)
-    stroke(label, color, Theme.Stroke.panel, true)
-    stroke(label, C.outline, 2)
-    local pad = Instance.new("UIPadding")
-    pad.PaddingTop = UDim.new(0, Theme.Space.md)
-    pad.PaddingBottom = UDim.new(0, Theme.Space.md)
-    pad.PaddingLeft = UDim.new(0, Theme.Space.lg)
-    pad.PaddingRight = UDim.new(0, Theme.Space.lg)
-    pad.Parent = label
-    label.Parent = screen.toasts
-    Kit.pop(label, 0.6)
+    Motion.scaleTo(label, "toastIn")
 
     local shown: { TextLabel } = {}
-    for _, child in screen.toasts:GetChildren() do
+    for _, child in target:GetChildren() do
         if child:IsA("TextLabel") then
             table.insert(shown, child)
         end
@@ -393,12 +670,13 @@ function Kit.toast(screen: Screen, message: string, kind: "gain" | "error" | "an
     table.sort(shown, function(a, b)
         return a.LayoutOrder < b.LayoutOrder
     end)
-    for i = 1, #shown - screen.info.toastMax do
+    for i = 1, #shown - 2 do -- max 2 lines per lane; the new one pushes the old one up
         shown[i]:Destroy()
     end
-    task.delay(3, function()
+    local hold = if kind == "announce" then 4 else 2 -- spec 4.8; the toastOut preset may carry part of it
+    task.delay(math.max(0, hold - Motion.get("toastOut").Delay), function()
         if label.Parent then
-            label:Destroy()
+            Motion.fadeOut(label, "toastOut", true)
         end
     end)
 end
@@ -410,7 +688,7 @@ function Kit.toastReply(screen: Screen, reply: Reply)
     end
 end
 
--- Panel manager: one panel open at a time behind a 40% shade + blur 18 (fades with a serial guard).
+-- Panel manager: one panel open at a time behind a shade + blur 18 (spec 3.1, motion spec 5).
 function Kit.panels(screen: Screen): Panels
     local shade = Kit.frame(screen.root, "MenuShade", C.shade)
     shade.Size = UDim2.fromScale(1, 1)
@@ -428,7 +706,18 @@ function Kit.panels(screen: Screen): Panels
         blur = b
     end
     assert(blur, "FLMenuBlur")
-    return { state = Logic.newPanelState(), frames = {}, shade = shade, blur = blur, serial = 0 }
+    return { state = Logic.newPanelState(), frames = {}, shade = shade, blur = blur, serial = 0, listeners = {} }
+end
+
+-- Called with the open panel's name, or nil when none is open (HUD columns slide away, tiles darken).
+function Kit.onPanel(panels: Panels, callback: (string?) -> ())
+    table.insert(panels.listeners, callback)
+end
+
+local function notify(panels: Panels)
+    for _, cb in panels.listeners do
+        task.spawn(cb, panels.state.open)
+    end
 end
 
 local function setFocus(panels: Panels, visible: boolean)
@@ -437,17 +726,30 @@ local function setFocus(panels: Panels, visible: boolean)
     if visible then
         panels.shade.Visible = true
         panels.blur.Enabled = true
-        tween(panels.shade, Theme.Motion.fade, { BackgroundTransparency = 0.4 })
-        tween(panels.blur, Theme.Motion.fade, { Size = 18 })
+        Motion.play(panels.shade, "shadeIn", { BackgroundTransparency = 0.6 })
+        Motion.play(panels.blur, "shadeIn", { Size = 18 })
     else
-        tween(panels.shade, 0.15, { BackgroundTransparency = 1 })
-        tween(panels.blur, 0.15, { Size = 0 })
-        task.delay(0.16, function()
+        Motion.play(panels.shade, "shadeOut", { BackgroundTransparency = 1 })
+        Motion.play(panels.blur, "shadeOut", { Size = 0 })
+        task.delay(Motion.get("shadeOut").Time + 0.01, function()
             if version == panels.serial then
                 panels.shade.Visible = false
                 panels.blur.Enabled = false
             end
         end)
+    end
+end
+
+local function closeFrame(frame: Frame)
+    local t = Motion.scaleTo(frame, "panelClose")
+    if t then
+        t.Completed:Connect(function(state)
+            if state == Enum.PlaybackState.Completed then
+                frame.Visible = false
+            end
+        end)
+    else
+        frame.Visible = false
     end
 end
 
@@ -458,78 +760,167 @@ function Kit.showPanel(panels: Panels, name: string)
     if previous then
         panels.frames[previous].Visible = false
     end
-    if not frame.Visible then
-        Kit.pop(frame, 0.9)
+    if not frame.Visible or previous then
+        frame.Visible = true
+        Motion.scaleTo(frame, "panelOpen")
     end
     frame.Visible = true
     setFocus(panels, true)
+    notify(panels)
 end
 
 function Kit.hidePanel(panels: Panels, name: string)
     if Logic.closePanel(panels.state, name) then
-        panels.frames[name].Visible = false -- closing is instant (BG rule: keeps visibility checks simple)
+        closeFrame(panels.frames[name])
         setFocus(panels, false)
+        notify(panels)
     end
 end
 
--- Panel shell: coloured title bar, red X top-right, body frame. Registered with the manager, hidden.
-function Kit.shell(screen: Screen, panels: Panels, name: string, title: string, titleColor: Color3): (Frame, Frame)
-    local panel = Kit.frame(screen.root, name, C.panel)
+-- Panel shell (spec 3.1): cream body with a dark rim, ribbon title on the top edge with the menu icon
+-- overhanging its left end, close button overhanging the top-right corner. Returns (panel, body).
+function Kit.shell(screen: Screen, panels: Panels, name: string, title: string, icon: string?): (Frame, Frame)
+    local panel = Kit.frame(screen.root, name)
     panel:SetAttribute("FLPanel", true)
     panel.AnchorPoint = Vector2.new(0.5, 0.5)
-    panel.Position = UDim2.fromScale(0.5, 0.5)
+    panel.Position = UDim2.new(0.5, 0, 0.5, 24)
     panel.Visible = false
     panel.ZIndex = 60
-    corner(panel, UDim.new(0, Theme.Radius.panel))
-    stroke(panel, C.outline, Theme.Stroke.panel, true)
     fit(panel, screen.info)
 
-    local bar = Kit.frame(panel, "TitleBar", titleColor)
-    bar.Size = UDim2.new(1, 0, 0, 80)
-    corner(bar, UDim.new(0, Theme.Radius.panel))
-    local heading = Kit.text(bar, title, Theme.TextSize.title)
-    heading.Name = "Title"
-    heading.AnchorPoint = Vector2.new(0, 0.5)
-    heading.Position = UDim2.new(0, Theme.Space.xl, 0.5, 0)
-    heading.Size = UDim2.new(1, -120, 0, 50)
-    heading.TextXAlignment = Enum.TextXAlignment.Left
+    local rim = Kit.frame(panel, "Rim", C.outline)
+    rim.AnchorPoint = Vector2.new(0.5, 0.5)
+    rim.Position = UDim2.fromScale(0.5, 0.5)
+    rim.Size = UDim2.new(1, 8, 1, 8)
+    rim.ZIndex = 60
+    corner(rim, UDim.new(0, Theme.Radius.panel + 2))
+    local bodyArt: GuiObject
+    if Theme.UseArt then
+        local art = Kit.image(panel, "panelWide")
+        art.SliceScale = 0.45
+        bodyArt = art
+    else
+        local f = Kit.frame(panel, "panelWide", C.panelBody)
+        corner(f, UDim.new(0, Theme.Radius.panel))
+        bodyArt = f
+    end
+    bodyArt.Name = "BodyArt"
+    bodyArt.Size = UDim2.fromScale(1, 1)
+    bodyArt.ZIndex = 61
 
-    local close = Kit.iconButton(bar, Theme.Images.close, "X", "danger", 56)
-    close.Name = "Close"
-    close.AnchorPoint = Vector2.new(1, 0.5)
-    close.Position = UDim2.new(1, -Theme.Space.md, 0.5, 0)
+    -- Ribbon: 60 % of the body width (max 520), 0.35 of it above the top edge
+    local ribbonW = 520
+    local ribbonH = math.floor(ribbonW * 181 / 524)
+    local ribbon: GuiObject
+    if Theme.UseArt then
+        local r = Kit.image(panel, Theme.Ribbons[name] or "headerBlue")
+        r.ScaleType = Enum.ScaleType.Fit
+        ribbon = r
+    else
+        local f = Kit.frame(panel, "Ribbon", Theme.Buttons.info.face)
+        corner(f, UDim.new(0, Theme.Radius.button))
+        stroke(f, C.outline, 4, true)
+        ribbon = f
+    end
+    ribbon.Name = "Ribbon"
+    ribbon.AnchorPoint = Vector2.new(0.5, 0)
+    ribbon.Position = UDim2.new(0.5, 0, 0, -math.floor(ribbonH * 0.35))
+    ribbon.Size = UDim2.fromOffset(ribbonW, if Theme.UseArt then ribbonH else 80)
+    ribbon.ZIndex = 64
+    local heading = Kit.text(ribbon, title, T.title, C.paper, nil, Theme.Stroke.banner)
+    heading.Name = "Title"
+    heading.AnchorPoint = Vector2.new(0.5, 0.5)
+    heading.Position = UDim2.fromScale(0.5, if Theme.UseArt then 0.47 else 0.5)
+    heading.Size = UDim2.new(0.7, 0, 0, 56)
+    heading.ZIndex = 65
+
+    if icon then
+        local i = Instance.new("ImageLabel")
+        i.Name = "MenuIcon"
+        i.BackgroundTransparency = 1
+        i.Image = icon
+        i.ScaleType = Enum.ScaleType.Fit
+        i.AnchorPoint = Vector2.new(0.5, 0.5)
+        i.Position = UDim2.new(0, 40, 0.5, -4)
+        i.Size = UDim2.fromOffset(110, 110)
+        i.Rotation = -8
+        i.ZIndex = 66
+        i.Parent = ribbon
+    end
+
+    local close = Kit.closeButton(panel, 72)
+    close.AnchorPoint = Vector2.new(0.5, 0.5)
+    close.Position = UDim2.new(1, -12, 0, 12)
+    close.ZIndex = 67
     close.Activated:Connect(function()
         Kit.hidePanel(panels, name)
     end)
 
+    local top = math.floor(ribbonH * 0.65) + Theme.Space.md
     local body = Kit.frame(panel, "Body")
-    body.Position = UDim2.fromOffset(Theme.Space.xl, 80 + Theme.Space.lg)
-    body.Size = UDim2.new(1, -2 * Theme.Space.xl, 1, -(80 + Theme.Space.lg + Theme.Space.xl))
+    body.Position = UDim2.fromOffset(Theme.Space.xl, top)
+    body.Size = UDim2.new(1, -2 * Theme.Space.xl, 1, -(top + Theme.Space.xl))
     body.ClipsDescendants = true
+    body.ZIndex = 62
 
     panels.frames[name] = panel
     return panel, body
 end
 
--- Currency pill: icon overhanging left, rolling number, small "+X/s" line underneath.
-function Kit.currencyPill(parent: Instance, image: string, color: Color3): Pill
-    local frame = Kit.frame(parent, "CurrencyPill", C.panel)
-    frame.Size = UDim2.fromOffset(240, 64)
-    corner(frame, PILL)
-    stroke(frame, C.outline, Theme.Stroke.panel, true)
-    local i = icon(frame, image, color, 76)
-    i.AnchorPoint = Vector2.new(0, 0.5)
-    i.Position = UDim2.new(0, -20, 0.5, 0)
-    local value = Kit.text(frame, "0", Theme.TextSize.title)
+-- Scrolling content area on the cream body (spec 3.1: 8 px bar in panelRim, vertical only).
+function Kit.scroll(parent: Instance): ScrollingFrame
+    local scroll = Instance.new("ScrollingFrame")
+    scroll.Name = "Scroll"
+    scroll.BackgroundTransparency = 1
+    scroll.BorderSizePixel = 0
+    scroll.Size = UDim2.fromScale(1, 1)
+    scroll.CanvasSize = UDim2.new()
+    scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    scroll.ScrollingDirection = Enum.ScrollingDirection.Y
+    scroll.ScrollBarThickness = 8
+    scroll.ScrollBarImageColor3 = C.panelRim
+    scroll.ScrollBarImageTransparency = 0
+    scroll.ZIndex = 62
+    scroll.Parent = parent
+    local pad = Instance.new("UIPadding")
+    pad.PaddingTop = UDim.new(0, 14) -- room for card dots and press scale
+    pad.PaddingLeft = UDim.new(0, 6)
+    pad.PaddingRight = UDim.new(0, 14)
+    pad.PaddingBottom = UDim.new(0, 8)
+    pad.Parent = scroll
+    return scroll
+end
+
+-- Currency row without a pill (spec 2.3): icon 52, white stroked number 38 with a soft shadow, rate line.
+function Kit.currencyPill(parent: Instance, image: string, _color: Color3?): Pill
+    local frame = Kit.frame(parent, "CurrencyRow")
+    frame.Size = UDim2.fromOffset(260, 52)
+    local i = Instance.new("ImageLabel")
+    i.Name = "Icon"
+    i.BackgroundTransparency = 1
+    i.Image = image
+    i.ScaleType = Enum.ScaleType.Fit
+    i.Size = UDim2.fromOffset(52, 52)
+    i.Parent = frame
+    local shadow = Kit.text(frame, "0", T.number, C.outline, nil, 0)
+    shadow.Name = "Shadow"
+    shadow.TextTransparency = 0.5
+    local value = Kit.text(frame, "0", T.number, C.paper, nil, 3)
     value.Name = "Value"
-    value.AnchorPoint = Vector2.new(0, 0.5)
-    value.Position = UDim2.new(0, 64, 0.5, 0)
-    value.Size = UDim2.new(1, -80, 0, 48)
-    value.TextXAlignment = Enum.TextXAlignment.Left
-    local rate = Kit.text(frame, "", Theme.TextSize.body, C.money)
+    for _, t in { shadow, value } do
+        t.AnchorPoint = Vector2.new(0, 0.5)
+        t.Size = UDim2.new(1, -60, 0, 46)
+        t.TextXAlignment = Enum.TextXAlignment.Left
+    end
+    value.Position = UDim2.new(0, 60, 0.5, 0)
+    shadow.Position = UDim2.new(0, 60, 0.5, 3)
+    value:GetPropertyChangedSignal("Text"):Connect(function()
+        shadow.Text = value.Text
+    end)
+    local rate = Kit.text(frame, "", T.body, C.money, nil, 2)
     rate.Name = "Rate"
-    rate.Position = UDim2.new(0, 64, 1, 2)
-    rate.Size = UDim2.new(1, -64, 0, 24)
+    rate.Position = UDim2.new(0, 60, 1, -4)
+    rate.Size = UDim2.new(1, -60, 0, 24)
     rate.TextXAlignment = Enum.TextXAlignment.Left
     local number = Instance.new("NumberValue")
     number.Parent = frame
@@ -539,13 +930,20 @@ function Kit.currencyPill(parent: Instance, image: string, color: Color3): Pill
     return { frame = frame, icon = i, value = value, rate = rate, number = number }
 end
 
--- Rolls the number to the new value in 0.4 s (or snaps when animate is false).
+-- Rolls the number to the new value and pops the icon (or snaps when animate is false).
 function Kit.setPillValue(pill: Pill, amount: number, animate: boolean?)
     if animate == false then
         pill.number.Value = amount
         pill.value.Text = Logic.formatNumber(amount)
-    else
-        tween(pill.number, 0.4, { Value = amount })
+        return
+    end
+    if amount == pill.number.Value then
+        return
+    end
+    local big = math.abs(amount - pill.number.Value) > math.max(10, pill.number.Value * 0.05)
+    Motion.roll(pill.number, amount, if big then "counterRoll" else "numberRoll")
+    if big then
+        Motion.pop(pill.icon, 1.15)
     end
 end
 
@@ -553,108 +951,183 @@ function Kit.setPillRate(pill: Pill, perSecond: number)
     pill.rate.Text = if perSecond > 0 then "+" .. Logic.formatNumber(perSecond) .. "/s" else ""
 end
 
--- Coins curve from an absolute screen point to the pill (0.8 s, 0.03 s stagger); pill bumps on each arrival.
+-- Coins fly from an absolute screen point to the pill icon; the icon pops on each arrival.
 function Kit.coinBurst(screen: Screen, pill: Pill, from: Vector2, count: number?)
     local root = screen.root
     local function toRoot(p: Vector2): Vector2
         return (p - root.AbsolutePosition) / screen.scale.Scale
     end
-    local start = toRoot(from)
     local finish = toRoot(pill.icon.AbsolutePosition + pill.icon.AbsoluteSize / 2)
-    for n = 1, count or 14 do
-        task.delay((n - 1) * 0.03, function()
-            local coin = icon(root, pill.icon.Image, pill.icon.BackgroundColor3, 44)
-            coin.Name = "BurstCoin"
-            coin.AnchorPoint = Vector2.new(0.5, 0.5)
-            coin.ZIndex = 80
-            local spread = Vector2.new(math.random(-160, 160), math.random(-220, -80))
-            local control = (start + finish) / 2 + spread
-            local t = Instance.new("NumberValue")
-            t.Changed:Connect(function(a)
-                local p = start:Lerp(control, a):Lerp(control:Lerp(finish, a), a) -- quadratic bezier
-                coin.Position = UDim2.fromOffset(p.X, p.Y)
-            end)
-            coin.Position = UDim2.fromOffset(start.X, start.Y)
-            tween(t, 0.8, { Value = 1 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In).Completed:Connect(function()
-                coin:Destroy()
-                t:Destroy()
-                Kit.pop(pill.frame, 1.15)
-            end)
-        end)
-    end
+    Motion.fly(root, pill.icon.Image, toRoot(from), finish, count or 14, function()
+        Motion.pop(pill.icon, 1.15)
+    end)
 end
 
--- 16+ px rounded bar with a highlight strip; optional centred label ("320 / 800").
-function Kit.progressBar(parent: Instance, size: UDim2, color: Color3): Bar
-    local frame = Kit.frame(parent, "ProgressBar", C.track)
+-- Progress bar (spec 4.3): barTrack art with the barFill art inside (4 px padding), centred label.
+-- `color` tints the fill (SunGraphica art may be tinted); nil keeps the green art.
+function Kit.progressBar(parent: Instance, size: UDim2, color: Color3?): Bar
+    local frame: GuiObject
+    local fill: GuiObject
+    if Theme.UseArt then
+        local track = Kit.image(parent, "barTrack", if size.Y.Scale == 0 then size.Y.Offset else 40)
+        track.Name = "ProgressBar"
+        frame = track
+        local inner = Kit.frame(track, "Inner")
+        inner.Position = UDim2.fromOffset(4, 4)
+        inner.Size = UDim2.new(1, -8, 1, -8)
+        inner.ClipsDescendants = true
+        local f = Kit.image(inner, "barFill", if size.Y.Scale == 0 then size.Y.Offset - 8 else 32)
+        f.Name = "Fill"
+        if color then
+            f.ImageColor3 = color
+        end
+        fill = f
+    else
+        local track = Kit.frame(parent, "ProgressBar", C.track)
+        corner(track, PILL)
+        stroke(track, C.outline, 3, true)
+        frame = track
+        local f = Kit.frame(track, "Fill", color or C.money)
+        corner(f, PILL)
+        fill = f
+    end
     frame.Size = size
-    corner(frame, PILL)
-    stroke(frame, C.outline, 3, true)
-    local fill = Kit.frame(frame, "Fill", color)
     fill.Size = UDim2.fromScale(0, 1)
-    corner(fill, PILL)
-    local shine = Kit.frame(fill, "Highlight", C.paper)
-    shine.BackgroundTransparency = 0.7
-    shine.Position = UDim2.fromOffset(8, 3)
-    shine.Size = UDim2.new(1, -16, 0.25, 0)
-    corner(shine, PILL)
-    local label = Kit.text(frame, "", Theme.TextSize.body)
+    local label = Kit.text(frame, "", 22, C.paper, nil, 2)
     label.Name = "Label"
     label.Size = UDim2.fromScale(1, 1)
+    label.ZIndex = 4
     return { frame = frame, fill = fill, label = label }
 end
 
 function Kit.setProgress(bar: Bar, fraction: number, text: string?)
-    tween(bar.fill, 0.2, { Size = UDim2.fromScale(math.clamp(fraction, 0, 1), 1) })
+    Motion.play(bar.fill, "fill", { Size = UDim2.fromScale(math.clamp(fraction, 0, 1), 1) })
     if text then
         bar.label.Text = text
     end
 end
 
+local RAINBOW = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromHex("FF4B4B")),
+    ColorSequenceKeypoint.new(0.2, Color3.fromHex("FFC800")),
+    ColorSequenceKeypoint.new(0.4, Color3.fromHex("5BD45B")),
+    ColorSequenceKeypoint.new(0.6, Color3.fromHex("3BA7FF")),
+    ColorSequenceKeypoint.new(0.8, Color3.fromHex("B65CFF")),
+    ColorSequenceKeypoint.new(1, Color3.fromHex("FF4B6E")),
+})
+Kit.RAINBOW = RAINBOW
+
 -- Rarity word in its colour (always the word, never colour alone); Secret gets a spinning rainbow.
 function Kit.rarityLabel(parent: Instance, rarity: string, textSize: number?): TextLabel
     local color = (Theme.Rarity :: { [string]: Color3 })[rarity]
     assert(color, "unknown rarity " .. rarity)
-    local label = Kit.text(parent, string.upper(rarity), textSize or Theme.TextSize.heading, color)
+    local size = textSize or T.heading
+    local label = Kit.text(parent, string.upper(rarity), size, color)
     label.Name = "Rarity"
     label.TextScaled = false
-    label.TextSize = textSize or Theme.TextSize.heading
+    label.TextSize = size
     label.AutomaticSize = Enum.AutomaticSize.X
     label.Size = UDim2.fromOffset(0, label.Size.Y.Offset)
     if rarity == "Secret" then
         local gradient = Instance.new("UIGradient")
-        gradient.Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, Color3.fromHex("FF4B4B")),
-            ColorSequenceKeypoint.new(0.2, Color3.fromHex("FFC800")),
-            ColorSequenceKeypoint.new(0.4, Color3.fromHex("5BD45B")),
-            ColorSequenceKeypoint.new(0.6, Color3.fromHex("3BA7FF")),
-            ColorSequenceKeypoint.new(0.8, Color3.fromHex("B65CFF")),
-            ColorSequenceKeypoint.new(1, Color3.fromHex("FF4B6E")),
-        })
+        gradient.Color = RAINBOW
         gradient.Parent = label
-        TweenService:Create(gradient, TweenInfo.new(3, Enum.EasingStyle.Linear, Enum.EasingDirection.In, -1), {
-            Rotation = 360,
-        }):Play()
+        Motion.spin(gradient, 3)
     end
     return label
 end
 
--- "+X" that floats 60 px up and fades in 0.9 s, then removes itself.
+-- Rarity card (spec 3.2): whole card in the rarity colour, lighter top, dark rim, model viewport,
+-- rarity word, income chip, count, equipped check, dot. `hidden` = undiscovered silhouette with "???".
+function Kit.rarityCard(parent: Instance, rarity: string, hidden: boolean?): Card
+    local color = (Theme.Rarity :: { [string]: Color3 })[rarity] or C.disabled
+    local frame = Kit.frame(parent, "Card", if hidden then Color3.fromHex("6B6B6B") else color)
+    frame.Size = UDim2.fromOffset(150, 170)
+    corner(frame, UDim.new(0, Theme.Radius.card))
+    stroke(frame, C.outline, Theme.Stroke.card, true)
+    local gradient = Instance.new("UIGradient")
+    gradient.Rotation = 90
+    gradient.Color = if rarity == "Secret" and not hidden
+        then RAINBOW
+        else ColorSequence.new(Color3.new(1, 1, 1), Color3.new(0.8, 0.8, 0.8))
+    gradient.Parent = frame
+    if rarity == "Secret" and not hidden then
+        Motion.spin(gradient, 4)
+    end
+    local vp = Instance.new("ViewportFrame")
+    vp.Name = "Model"
+    vp.BackgroundTransparency = 1
+    vp.AnchorPoint = Vector2.new(0.5, 0)
+    vp.Position = UDim2.new(0.5, 0, 0, 10)
+    vp.Size = UDim2.fromOffset(110, 100)
+    vp.Ambient = if hidden then Color3.new() else Color3.fromRGB(200, 200, 200)
+    vp.LightColor = if hidden then Color3.new() else Color3.new(1, 1, 1)
+    vp.ImageColor3 = if hidden then Color3.new() else Color3.new(1, 1, 1)
+    vp.Parent = frame
+    local title = Kit.text(frame, if hidden then "???" else "", 22, C.paper, nil, 2)
+    title.Name = "Title"
+    title.AnchorPoint = Vector2.new(0.5, 1)
+    title.Position = UDim2.new(0.5, 0, 1, -26)
+    title.Size = UDim2.new(1, -10, 0, 26)
+    local word = Kit.text(frame, string.upper(rarity), 18, C.paper, nil, 2)
+    word.Name = "Rarity"
+    word.AnchorPoint = Vector2.new(0.5, 1)
+    word.Position = UDim2.new(0.5, 0, 1, -6)
+    word.Size = UDim2.new(1, -10, 0, 22)
+    local chip = Kit.frame(frame, "Income", Color3.new())
+    chip.BackgroundTransparency = 0.5
+    chip.Position = UDim2.fromOffset(6, 6)
+    chip.AutomaticSize = Enum.AutomaticSize.X
+    chip.Size = UDim2.fromOffset(0, 24)
+    chip.Visible = false
+    corner(chip, PILL)
+    local pad = Instance.new("UIPadding")
+    pad.PaddingLeft = UDim.new(0, 6)
+    pad.PaddingRight = UDim.new(0, 6)
+    pad.Parent = chip
+    local income = Kit.text(chip, "", 18, C.money, nil, 2)
+    income.TextScaled = false
+    income.TextSize = 18
+    income.AutomaticSize = Enum.AutomaticSize.X
+    income.Size = UDim2.fromOffset(0, 24)
+    income:GetPropertyChangedSignal("Text"):Connect(function()
+        chip.Visible = income.Text ~= ""
+    end)
+    local count = Kit.text(frame, "", 20, C.paper, nil, 2)
+    count.Name = "Count"
+    count.AnchorPoint = Vector2.new(1, 1)
+    count.Position = UDim2.new(1, -6, 1, -26)
+    count.Size = UDim2.fromOffset(40, 24)
+    count.TextXAlignment = Enum.TextXAlignment.Right
+    local check = Kit.image(frame, "check")
+    check.AnchorPoint = Vector2.new(0.5, 0.5)
+    check.Position = UDim2.fromOffset(4, 4)
+    check.Size = UDim2.fromOffset(36, 36)
+    check.ZIndex = 8
+    check.Visible = false
+    local dot = Kit.dot(frame)
+    return {
+        frame = frame,
+        viewport = vp,
+        rarity = word,
+        title = title,
+        income = income,
+        count = count,
+        check = check,
+        dot = dot,
+    }
+end
+
+-- "+X" that floats up and fades (GlassPanels floatNumber), then removes itself.
 function Kit.floatingNumber(parent: Instance, value: string, color: Color3, position: UDim2)
-    local label = Kit.text(parent, value, Theme.TextSize.heading, color)
+    local label = Kit.text(parent, value, T.button, color, nil, 3)
     label.Name = "FloatingNumber"
     label.AnchorPoint = Vector2.new(0.5, 0.5)
-    label.Size = UDim2.fromOffset(200, 36)
+    label.Size = UDim2.fromOffset(220, 40)
     label.Position = position
     label.ZIndex = 75
-    local s = label:FindFirstChildOfClass("UIStroke")
-    tween(label, 0.9, { Position = position + UDim2.fromOffset(0, -60), TextTransparency = 1 })
-    if s then
-        tween(s, 0.9, { Transparency = 1 })
-    end
-    task.delay(0.95, function()
-        label:Destroy()
-    end)
+    Motion.scaleTo(label, "toastIn")
+    Motion.float(label)
 end
 
 return Kit

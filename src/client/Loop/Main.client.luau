@@ -193,6 +193,15 @@ while true do
         local text, target = objective(step)
         Hud.setBanner(text)
         Trail.set(target)
+        -- count goals get the mini bar under the objective (ui-style-spec 2.4)
+        local cost = Ctx.Economy.NestSlotCost[3]
+        if step == 10 and (player:GetAttribute("Coins") or 0) < cost then
+            Hud.setGoal(player:GetAttribute("Coins") or 0, cost)
+        elseif step == 12 and not Ctx.washing then
+            Hud.setGoal(Ctx.strength, Ctx.Economy.Zones[2].StrengthGate)
+        else
+            Hud.setGoal(nil, nil)
+        end
     end
     task.wait(0.2)
 end

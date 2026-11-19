@@ -32,13 +32,12 @@ function Demo.mount(openPanel: boolean?): Kit.Screen
     local panels = Kit.panels(screen)
     Kit.banner(screen, "Throw food from the ledge!")
 
-    -- Coins counter: PC bottom-left, phone top-left (design-v3 7.2).
+    -- Coins row: left edge under the menu column (ui-style-spec 2.3).
     local coins = Kit.currencyPill(screen.root, Theme.Images.coin, C.reward)
     Kit.setPillValue(coins, 0, false)
     Kit.setPillRate(coins, 125)
     Kit.onLayout(screen, function(info)
-        coins.frame.AnchorPoint = if info.compact then Vector2.new(0, 0) else Vector2.new(0, 1)
-        coins.frame.Position = if info.compact then UDim2.new(0.02, 20, 0.10, 0) else UDim2.new(0.02, 20, 0.95, -24)
+        coins.frame.Position = UDim2.new(0, 20, if info.compact then 0.47 else 0.62, 0)
     end)
     Kit.setPillValue(coins, 1234567)
 
@@ -61,11 +60,11 @@ function Demo.mount(openPanel: boolean?): Kit.Screen
     end
 
     -- Panel shell (Upgrades, green title) with a price button and a progress bar inside.
-    local _, body = Kit.shell(screen, panels, "Upgrades", "Upgrades", C.primary)
+    local _, body = Kit.shell(screen, panels, "Upgrades", "Upgrades", Kit.art("upgrade"))
     local list = Instance.new("UIListLayout")
     list.Padding = UDim.new(0, Theme.Space.lg)
     list.Parent = body
-    Kit.text(body, "Carrot: Luck x4", Theme.TextSize.heading)
+    Kit.text(body, "Carrot: Luck x4", Theme.TextSize.heading, C.panelText, nil, 0)
     local price = Kit.progressBar(body, UDim2.new(1, 0, 0, 24), C.reward)
     Kit.setProgress(price, 0.75, "900 / 1.2K")
     local buy = Kit.button(body, "Buy 1.2K", "danger", UDim2.fromOffset(220, 64))

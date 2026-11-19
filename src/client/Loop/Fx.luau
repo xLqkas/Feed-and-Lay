@@ -131,17 +131,16 @@ function Fx.floatText(position: Vector3, text: string, color: Color3, rise: numb
     label.TextScaled = true
     label.FontFace = Font.fromEnum(Enum.Font.FredokaOne)
     label.TextColor3 = color
-    label.TextStrokeTransparency = 0.2
+    label.TextStrokeTransparency = 1
+    local stroke = Instance.new("UIStroke") -- thick dark stroke like every HUD text (ui-style-spec C6)
+    stroke.Color = Color3.fromHex("2A2B31")
+    stroke.Thickness = 2.5
+    stroke.Parent = label
     label.Parent = gui
     local time = seconds or 0.9
     Fx.tween(a, time, { WorldPosition = position + Vector3.new(0, rise or 3, 0) })
-    Fx.tween(
-        label,
-        time,
-        { TextTransparency = 1, TextStrokeTransparency = 1 },
-        Enum.EasingStyle.Quad,
-        Enum.EasingDirection.In
-    )
+    Fx.tween(label, time, { TextTransparency = 1 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+    Fx.tween(stroke, time, { Transparency = 1 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
     task.delay(time + 0.05, function()
         a:Destroy()
     end)

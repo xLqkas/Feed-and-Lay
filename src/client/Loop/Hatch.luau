@@ -13,7 +13,6 @@ local Nest = require(script.Parent.Nest)
 local Pen = require(script.Parent.Pen)
 local Sfx = require(script.Parent.Sfx)
 local UI = script.Parent.Parent:WaitForChild("UI")
-local Kit = require(UI:WaitForChild("Kit"))
 local Logic = require(UI:WaitForChild("Logic"))
 local Theme = require(UI:WaitForChild("Theme"))
 
@@ -79,7 +78,7 @@ local function burst(card: Hud.Card, r: any, at: Vector3, big: boolean)
     if edge then
         edge.Color = color
     end
-    Kit.pop(card.rarity, 0.01)
+    Hud.revealLand(card, r.firstOfSpecies == true)
     local rank = table.find(Economy.RarityOrder, r.rarity) or 1
     Fx.burst(at, color, if big then 30 else 14, 14, 0.6, 0.8)
     if big and rank >= 5 then

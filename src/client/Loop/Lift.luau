@@ -17,6 +17,7 @@ local Sfx = require(script.Parent.Sfx)
 local UI = script.Parent.Parent:WaitForChild("UI")
 local Kit = require(UI:WaitForChild("Kit"))
 local Logic = require(UI:WaitForChild("Logic"))
+local Motion = require(UI:WaitForChild("Motion"))
 local Theme = require(UI:WaitForChild("Theme"))
 
 local C = Theme.Colors
@@ -51,21 +52,33 @@ local function circle(name: string, color: Color3, thickness: number): Frame
     s.Name = "Line"
     return f
 end
-local target = circle("Target", C.paper, 10)
-local outer = circle("Ring", C.reward, 8)
-local word = Kit.text(hud, "", Theme.TextSize.display)
+local target = circle("Target", C.paper, 12)
+local outer = circle("Ring", C.reward, 10)
+-- dark rims so the rings read on bright ground (C6)
+for _, f in { target, outer } do
+    local rim = Kit.stroke(f, C.outline, (f:FindFirstChild("Line") :: UIStroke).Thickness + 5, true)
+    rim.Name = "Rim"
+    local inner = Kit.frame(f, "Inner")
+    inner.AnchorPoint = Vector2.new(0.5, 0.5)
+    inner.Position = UDim2.fromScale(0.5, 0.5)
+    inner.Size = UDim2.fromScale(1, 1)
+    Kit.corner(inner, UDim.new(0.5, 0))
+    local line = f:FindFirstChild("Line") :: UIStroke
+    line.Parent = inner
+end
+local word = Kit.text(hud, "", Theme.TextSize.display, C.paper, nil, 5)
 word.AnchorPoint = Vector2.new(0.5, 0.5)
 word.Position = UDim2.fromScale(0.5, RING_Y)
 word.Size = UDim2.fromOffset(420, 70)
-local bar = Kit.progressBar(hud, UDim2.fromOffset(560, 40), C.reward)
+local bar = Kit.progressBar(hud, UDim2.fromOffset(560, 40), nil)
 bar.frame.AnchorPoint = Vector2.new(0.5, 0)
-local bellLabel = Kit.text(hud, "", Theme.TextSize.body, C.muted)
+local bellLabel = Kit.text(hud, "", Theme.TextSize.label, C.paper, nil, 3)
 bellLabel.AnchorPoint = Vector2.new(0.5, 0)
 bellLabel.Size = UDim2.fromOffset(560, 28)
-local hint = Kit.text(hud, "", Theme.TextSize.body)
+local hint = Kit.text(hud, "", Theme.TextSize.label, C.paper, nil, 3)
 hint.AnchorPoint = Vector2.new(0.5, 0)
 hint.Size = UDim2.fromOffset(700, 28)
-local close = Kit.iconButton(hud, Theme.Images.close, "X", "danger", 64)
+local close = Kit.closeButton(hud, 72)
 close.AnchorPoint = Vector2.new(1, 0)
 
 Kit.onLayout(Hud.screen, function(info)
@@ -74,7 +87,7 @@ Kit.onLayout(Hud.screen, function(info)
     bar.frame.Position = UDim2.fromScale(0.5, y)
     bellLabel.Position = UDim2.new(0.5, 0, y, 46)
     hint.Position = UDim2.new(0.5, 0, y, 78)
-    close.Position = UDim2.fromScale(0.98, if info.compact then 0.2 else 0.05)
+    close.Position = UDim2.new(1, -24, if info.compact then 0.22 else 0.05, 0)
 end)
 
 -- Next zone gate above this Strength (bar goal), or nil past the last zone
@@ -120,27 +133,25 @@ local function showWord(text: string, color: Color3)
     word.Text = text
     word.TextColor3 = color
     word.TextTransparency = 0
-    Kit.pop(word, 0.6)
+    Motion.pop(word, 0.6)
     task.delay(0.45, function()
         if word.Text == text then
-            Kit.tween(word, 0.2, { TextTransparency = 1 })
+            Motion.fadeOut(word, "wordOut")
         end
     end)
 end
 
 local function stamp(zoneName: string)
-    local s = Kit.text(Hud.screen.root, string.upper(zoneName) .. " UNLOCKED!", Theme.TextSize.display, C.reward)
+    local s =
+        Kit.text(Hud.screen.root, string.upper(zoneName) .. " UNLOCKED!", Theme.TextSize.display, C.reward, nil, 5)
     s.AnchorPoint = Vector2.new(0.5, 0.5)
     s.Size = UDim2.fromOffset(900, 80)
     s.Position = UDim2.fromScale(0.5, -0.2)
     s.ZIndex = 45
-    Kit.tween(s, 0.4, { Position = UDim2.fromScale(0.5, 0.28) }, Enum.EasingStyle.Back)
+    Motion.play(s, "stampIn", { Position = UDim2.fromScale(0.5, 0.28) })
     Sfx.play("fanfare2")
     task.delay(1.6, function()
-        Kit.tween(s, 0.3, { TextTransparency = 1 })
-        task.delay(0.35, function()
-            s:Destroy()
-        end)
+        Motion.fadeOut(s, "wordOut", true)
     end)
 end
 
@@ -309,7 +320,7 @@ function Lift.init()
         target.BackgroundTransparency = if e >= 0 then 1 else 0.85
         local scale = math.max(2 - e / T, 1 - Economy.LIFT_LATE)
         outer.Size = UDim2.fromOffset(TARGET * scale, TARGET * scale)
-        local line = outer:FindFirstChild("Line") :: UIStroke
+        local line = (outer:FindFirstChild("Inner") :: Frame):FindFirstChild("Line") :: UIStroke
         line.Color = if math.abs(e - T) / T <= Economy.LIFT_GOOD then C.money else C.reward
     end)
 end

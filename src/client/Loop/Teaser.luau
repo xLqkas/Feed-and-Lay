@@ -59,11 +59,11 @@ function Teaser.update(strength: number)
     local toward = (floor - ledge) * Vector3.new(1, 0, 1)
     local anchor = Fx.part("ZoneTeaserSign", Vector3.one, tint)
     anchor.Transparency = 1
-    anchor.Position = ledge + toward.Unit * 10 + Vector3.new(0, 9, 0)
+    anchor.Position = ledge + toward.Unit * 24 + Vector3.new(0, 6, 0)
     table.insert(parts, anchor)
     local gui = Instance.new("BillboardGui")
     gui.Name = "Sign"
-    gui.Size = UDim2.fromScale(9, 4.5)
+    gui.Size = UDim2.fromScale(7, 3.5)
     gui.LightInfluence = 0
     gui.MaxDistance = 120
     gui.Parent = anchor

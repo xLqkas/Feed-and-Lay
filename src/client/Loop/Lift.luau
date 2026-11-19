@@ -3,6 +3,8 @@
 -- player taps (PC: click or Space, phone: tap anywhere outside buttons, gamepad: A) when they meet. The server
 -- owns the ring schedule (Economy.liftRing with the session seed) and judges every tap; this module only draws
 -- rings, sends taps and shows the server's result. Leave by walking out, the X button, or 20 s without a tap.
+-- Catchiness pass: the character holds a barbell (plates per dumbbell tier, growing with Strength) and presses it
+-- overhead on every good rep; perfect reps add a grunt, a screen flash and a shake; consecutive reps show a streak.
 
 local ContextActionService = game:GetService("ContextActionService")
 local RunService = game:GetService("RunService")
@@ -36,6 +38,16 @@ local blocked = false -- after leaving with X or a refusal: until the player ste
 local session: any = nil
 local ring = { index = 0, startAt = 0, duration = 1 }
 local lastTap = 0
+local streak = 0
+local press = Instance.new("NumberValue") -- 0 = barbell at the chest, 1 = overhead
+local barbell: Model? = nil
+local shoulders: { { motor: Motor6D, c0: CFrame } } = {}
+local PLATE_COLORS = {
+    Color3.fromRGB(150, 105, 60), -- Twig
+    Color3.fromRGB(140, 140, 150), -- Stone
+    Color3.fromRGB(70, 75, 85), -- Iron
+    Color3.fromRGB(255, 200, 40), -- Gold
+}
 
 -- HUD: target circle at screen centre, the shrinking ring, Strength bar, dumbbell name, result word, X
 local hud = Kit.frame(Hud.screen.root, "LiftHud")
@@ -80,6 +92,115 @@ hint.AnchorPoint = Vector2.new(0.5, 0)
 hint.Size = UDim2.fromOffset(700, 28)
 local close = Kit.closeButton(hud, 72)
 close.AnchorPoint = Vector2.new(1, 0)
+local streakLabel = Kit.text(hud, "", Theme.TextSize.heading, C.reward, nil, 4)
+streakLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+streakLabel.Position = UDim2.new(0.5, 0, RING_Y, 110)
+streakLabel.Size = UDim2.fromOffset(420, 44)
+local flash = Kit.frame(Hud.screen.root, "PerfectFlash", C.paper)
+flash.Size = UDim2.fromScale(1, 1)
+flash.BackgroundTransparency = 1
+flash.ZIndex = 40
+flash.Visible = false
+
+-- Barbell held by the character: plates per side = dumbbell tier, plate size grows with Strength
+local function buildBarbell(): Model
+    local model = Instance.new("Model")
+    model.Name = "Barbell"
+    local rod = Fx.part("Bar", Vector3.new(5.2, 0.22, 0.22), Color3.fromRGB(190, 195, 205), Enum.PartType.Cylinder)
+    rod.Material = Enum.Material.Metal
+    rod.Parent = model
+    model.PrimaryPart = rod
+    local tier = math.clamp(Ctx.dumbbellTier, 1, #PLATE_COLORS)
+    local size = 0.9 + 0.35 * math.log10(math.max(Ctx.strength, 10) / 10)
+    for _, side in { -1, 1 } do
+        for k = 1, tier do
+            local d = size * (1 - 0.12 * (k - 1))
+            local plate = Fx.part("Plate", Vector3.new(0.28, d, d), PLATE_COLORS[tier], Enum.PartType.Cylinder)
+            plate.Material = if tier == 4 then Enum.Material.Metal else Enum.Material.SmoothPlastic
+            plate:SetAttribute("Offset", side * (1.9 + 0.3 * (k - 1)))
+            plate.Parent = model
+        end
+    end
+    model.Parent = Fx.folder
+    return model
+end
+
+local function placeBarbell()
+    local root = Ctx.root()
+    local model = barbell
+    if not root or not model then
+        return
+    end
+    local p = press.Value
+    local cf = root.CFrame * CFrame.new(0, 0.5 + 2.9 * p, -0.9 + 0.5 * p)
+    for _, part in model:GetChildren() do
+        if part:IsA("BasePart") then
+            part.CFrame = cf * CFrame.new(part:GetAttribute("Offset") or 0, 0, 0)
+        end
+    end
+    -- arms follow the bar: forward at the chest, straight up overhead (shoulder C0, kept across animations)
+    for _, s in shoulders do
+        s.motor.C0 = s.c0 * CFrame.Angles(math.rad(90 + 75 * p), 0, 0)
+    end
+end
+
+local function grip(on: boolean)
+    for _, s in shoulders do
+        s.motor.C0 = s.c0
+    end
+    table.clear(shoulders)
+    if barbell then
+        barbell:Destroy()
+        barbell = nil
+    end
+    local char = Ctx.player.Character
+    if not on or not char then
+        return
+    end
+    for _, name in { "RightShoulder", "LeftShoulder", "Right Shoulder", "Left Shoulder" } do
+        local motor = char:FindFirstChild(name, true)
+        if motor and motor:IsA("Motor6D") then
+            table.insert(shoulders, { motor = motor, c0 = motor.C0 })
+        end
+    end
+    press.Value = 0
+    barbell = buildBarbell()
+end
+
+local function rep(perfect: boolean)
+    Fx.tween(press, 0.16, { Value = 1 }, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+    task.delay(0.22, function()
+        Fx.tween(press, 0.32, { Value = 0 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+        task.delay(0.3, function()
+            local root = Ctx.root()
+            Sfx.play("clank", if perfect then 0.9 else 1.1, 0.5, root and root.Position)
+        end)
+    end)
+    if perfect then
+        Sfx.play("grunt", 0.95 + math.random() * 0.15, 0.7)
+        if not Motion.reduced() then
+            Cam.shake(0.18, 0.25)
+        end
+        flash.Visible = true
+        flash.BackgroundTransparency = 0.55
+        Motion.play(flash, "revealFlashOut", { BackgroundTransparency = 1 })
+        local root = Ctx.root()
+        if root then
+            Fx.burst(root.Position + Vector3.new(0, 4, 0), C.reward, 14, 10, 0.35, 0.6)
+        end
+    end
+end
+
+local function setStreak(n: number)
+    streak = n
+    if n >= 3 then
+        streakLabel.Text = "STREAK x" .. n
+        streakLabel.TextTransparency = 0
+        Motion.pop(streakLabel, 1.25)
+    else
+        streakLabel.Text = ""
+    end
+end
 
 Kit.onLayout(Hud.screen, function(info)
     local y = if info.compact then 0.62 else 0.6
@@ -163,6 +284,8 @@ local function stop(sendStop: boolean)
     Ctx.lifting = false
     session = nil
     hud.Visible = false
+    setStreak(0)
+    grip(false)
     Cam.clear("lift")
     ContextActionService:UnbindAction(ACTION)
     if sendStop then
@@ -195,13 +318,16 @@ local function tap()
     if r.result == "miss" then
         showWord("MISS", C.muted)
         Sfx.play("bonk", 0.8, 0.5)
+        setStreak(0)
         if r.message ~= "" then
             Hud.toast(r.message, "error")
         end
     else
         local perfect = r.result == "perfect"
+        setStreak(streak + 1)
         showWord(if perfect then "PERFECT!" else "GOOD", if perfect then C.reward else C.money)
-        Sfx.play("ding", if perfect then 1.2 else 1, 0.6)
+        Sfx.play("ding", (if perfect then 1.2 else 1) + 0.03 * math.min(streak, 10), 0.6)
+        rep(perfect)
         local root = Ctx.root()
         if root then
             Fx.floatText(
@@ -242,6 +368,7 @@ local function start()
     lastTap = os.clock()
     refreshBar()
     hud.Visible = true
+    grip(true)
     local touch = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
     local gamepad = UserInputService:GetLastInputType().Name:find("Gamepad") ~= nil
     hint.Text = if gamepad
@@ -269,6 +396,15 @@ local function start()
 end
 
 function Lift.init()
+    if RunService:IsStudio() then
+        -- Studio-only test hook: firing Player.FLDebugLiftTap taps like a click (tool input is too laggy to time)
+        local debugTap = Instance.new("BindableEvent")
+        debugTap.Name = "FLDebugLiftTap"
+        debugTap.Event:Connect(function()
+            task.spawn(tap)
+        end)
+        debugTap.Parent = Ctx.player
+    end
     close.Activated:Connect(function()
         stop(true)
         blocked = true
@@ -313,9 +449,13 @@ function Lift.init()
                 startAt = ring.startAt + T * (1 + Economy.LIFT_LATE) + gap,
                 duration = nextT,
             }
-            showWord("MISS", C.muted)
+            if os.clock() - lastTap < 2.5 then -- an idle player is not told MISS every couple of seconds
+                showWord("MISS", C.muted)
+                setStreak(0)
+            end
             return
         end
+        placeBarbell()
         outer.Visible = e >= 0
         target.BackgroundTransparency = if e >= 0 then 1 else 0.85
         local scale = math.max(2 - e / T, 1 - Economy.LIFT_LATE)

@@ -7,6 +7,7 @@ Rules for this document:
 - "Server validates" lists are the minimum. Every RemoteFunction also follows the plan's handler shape: whitelist, per-player cooldown, busy flag, type and range checks, `pcall`, reply `{ok, message}`.
 - "Phone" means the compact layout: `compact = viewport.X < 700 or viewport.Y < 500` (the BG `layout()` rule). Everything else is "PC". Console uses the PC layout with gamepad bindings listed where they differ.
 - Where a mechanic is borrowed from the study game, only the mechanic is taken. No names, characters or art from it.
+- The owner's answers in "Owner decisions (2026-11-19)" at the end override anything above that contradicts them.
 
 ---
 
@@ -17,7 +18,7 @@ Rules for this document:
 **Cut:**
 | Cut | Why |
 |---|---|
-| Auto-Thrower and Auto-Washer passes | They sell skipping the game and let idle players progress content. Replaced by Fast Wash (x2 spray power). |
+| ~~Auto-Thrower and Auto-Washer passes~~ | Not cut (owner decision): kept, redesigned so automation is slower than active play and never reaches new zones. See section 9 and "Owner decisions". |
 | Golden Feast Bait (paid guaranteed mutation), Instant Hatch Potion | Paid outcome on a random roll; hatch is 5 s anyway. |
 | 3-layer wash, incubators, growth timers | Lengthen the loop we are trying to shorten. |
 | Alpha bosses, 50,000-stud distances, the CCU target | Scope. |
@@ -610,7 +611,7 @@ Respect Reduced motion: no camera shake, no FOV punch, particles halved, tweens 
 | Zone unlocked | stamp "VOLCANO UNLOCKED!" drops from y -0.2 (Back), holds 1.2 s | confetti | big fanfare | none | 2 s |
 | Golden Hour start | gold banner sweeps left to right 1.2 s | gold motes in the sky for 2 min | chime + light music layer | none | 1.2 s |
 
-Sound set to source (Roblox Creator Store audio, licensed for use; uploaded under the group): click, whoosh-charge, whoosh-throw, ding, nom, cluck, thunk, water hiss loop, splat, chime, crack, hum, tick, 3 fanfares, coin jingle, coin tick, ka-ching, bonk, page flip, stamp fanfare, 1 calm music loop, 1 Golden Hour music layer. All 3D sounds use `RollOffMaxDistance` 60 (fixes server-wide bleed); UI sounds play locally in `SoundService`.
+Sound set to source (Roblox Creator Store audio, or audio the owner uploads to their own account; there is no group yet): click, whoosh-charge, whoosh-throw, ding, nom, cluck, thunk, water hiss loop, splat, chime, crack, hum, tick, 3 fanfares, coin jingle, coin tick, ka-ching, bonk, page flip, stamp fanfare, 1 calm music loop, 1 Golden Hour music layer. All 3D sounds use `RollOffMaxDistance` 60 (fixes server-wide bleed); UI sounds play locally in `SoundService`.
 
 ---
 
@@ -627,6 +628,8 @@ Principles: never block progress, never show a Robux price next to a coin price 
 | Fast Wash | Nozzle DPS x2 | 149 R$ |
 | Big Pen | +4 pen slots (max 20) | 249 R$ |
 | VIP | Gold name tag and chat tag, gold Mama Hen hats on your plot, +10% coins | 199 R$ |
+| Auto-Thrower | While you are on your own plot and in game, throws one GOOD throw (multiplier 1.0, never SWEET) every 6 s if the nest has room. Active SWEET throws reach farther and come faster. Pauses when you are away from your plot or spraying. Never offline. | 499 R$ (set at P-10) |
+| Auto-Washer | While you are on your own plot and not spraying, the loaded egg washes at 40% of your Nozzle DPS (Fast Wash applies). Active spraying is always faster. Never offline. | 449 R$ (set at P-10) |
 
 **Developer products**
 
@@ -655,14 +658,14 @@ Principles: never block progress, never show a Robux price next to a coin price 
 
 ## 11. Build order
 
-Prerequisite for all: `MAIN_PLAN.md` Phase 0 done (repo matches Studio, wash script fixed, tooling, exploits closed). Each package is sized for one agent. "Accept" is the test the playtest agent runs; record PASS / FAIL / NOT RUN.
+Prerequisite for all: `MAIN_PLAN.md` Phase 0 done (repo matches Studio, wash script fixed, tooling, exploits closed). Owner rule: the vertical slice is the basic core and is built first; "After the slice" packages start only once the core loop playtests as fun. Each package is sized for one agent. "Accept" is the test the playtest agent runs; record PASS / FAIL / NOT RUN.
 
 ### Vertical slice (proves the new loop: Meadow and Marsh only)
 
 | # | Package | Depends on | Scope | Accept |
 |---|---|---|---|---|
 | VS-1 | Economy module | Phase 0 | `src/shared/Economy.luau` with every table in section 4 and pure functions `eggOdds`, `rollEgg`, `throwMultiplier`, `zoneForDistance`, `washTimeEstimate`, `incomePerSecond`, `upgradeCost`; assert test in `tests/` run through Studio MCP. | Test prints PASS; odds match table 4.5 to 0.1%; `throwMultiplier(0.9) == 1.25`. |
-| VS-2 | Save schema v7 | VS-1 | Pure transform module: fields `coins, strength, foodTier, dumbbellTier, nestSlots, penSlots, nozzleLevel, rebirths, tutorialStep, pets[], nest[], book{}, daily{}, settings{}, receipts{}`, `sanitize()`, session lock, failed writes retried, nest eggs saved. | Assert test for sanitize and transform; leave with 2 eggs in nest, rejoin: eggs still there. |
+| VS-2 | Save schema v7 | VS-1 | Pure transform module: fields `coins, strength, foodTier, dumbbellTier, nestSlots, penSlots, nozzleLevel, rebirths, tutorialStep, pets[], nest[], book{}, daily{}, settings{}, receipts{}`, `sanitize()`, session lock, failed writes retried, nest eggs saved. No wipe: on first v3 load, read the old `EggSanctuary_SaveData_v6` record and convert its `GardenPets` (owner decision 2); write only to a new v7 key, never to the v6 key. | Assert test for sanitize and transform, including a v6 record with all 5 old species and each mutation converting to v7 pets; leave with 2 eggs in nest, rejoin: eggs still there. |
 | VS-3 | Compact plot (map) | Phase 0 | Rebuild one plot (then copy to 6) on the canyon rim per section 3.0; tag stations `FLStation`; Meadow and Marsh landing floors. Studio-only; document in the repo. | Walk Ledge -> Washer -> Hatch Pad -> Ledge in under 3 s total. |
 | VS-4 | UI kit core | Phase 0 | `Theme.luau`, `Kit.luau` (button with press-scale, toast, banner, shell, `layout()` compact switch), Coins counter with rolling number and coin burst. | Phone 375 x 667 and PC 1920 x 1080 screenshots: nothing overflows; toast shows server message. |
 | VS-5 | Egg pipeline (server) | VS-1, VS-2, VS-3 | `EggService`: StartCharge / ReleaseThrow, egg state machine Flight -> Nest -> Washing -> Hatching -> Pet, nest capacity, `HatchResult` push, pen placement and swap, income tick. Remotes per plan handler shape. | Script-driven test: 3 throws accepted, 4th rejected "Nest full"; release without StartCharge rejected; species never in any client-bound payload before hatch. |
@@ -686,7 +689,7 @@ Prerequisite for all: `MAIN_PLAN.md` Phase 0 done (repo matches Studio, wash scr
 | P-7 | Onboarding step 16 + goal banner + full progressive HUD | P-1, P-3, P-4 | "Next:" banner always names a real unlock. |
 | P-8 | Juice and sound pass (section 8 in full) | VS slice | Every row in section 8 visible in a capture; no sound heard beyond 60 studs. |
 | P-9 | Art: Mama Hen, eggs, 15 creature meshes, VFX textures | P-2 | 0 primitive-part pets left; tri budget met. |
-| P-10 | Monetisation (passes, products, ProcessReceipt, PolicyService) | P-1, P-5 | Test purchases in Studio grant once even when ProcessReceipt is called twice; odds-changing items hidden under the restricted policy. |
+| P-10 | Monetisation (passes incl. redesigned Auto-Thrower and Auto-Washer, products, ProcessReceipt, PolicyService) | P-1, P-5 | Test purchases in Studio grant once even when ProcessReceipt is called twice; odds-changing items hidden under the restricted policy. |
 | P-11 | Daily Gift, session gifts, friends bonus, leaderboard board | P-3 | Streak rules as section 10 with a mocked clock in the assert test. |
 | P-12 | Settings panel and reduced motion | VS-4 | Settings persist across rejoin; reduced motion removes shake. |
 | P-13 | Stats and live flags (BG `stats` + `liveFlags` port) | Phase 0 | Hatch counts per rarity visible in the stats store. |
@@ -696,9 +699,33 @@ Prerequisite for all: `MAIN_PLAN.md` Phase 0 done (repo matches Studio, wash scr
 
 ## 12. Open questions for the owner
 
+All six were answered on 2026-11-19; see "Owner decisions (2026-11-19)" below.
+
 1. Wipe saves at v3 launch (economy numbers change), or convert old pets to the new species?
 2. Is "Mama Hen" (one rig, five tints) fine as the eater, or do you want a different creature per zone?
 3. Max players per server: keep 6 plots?
 4. Can we use Roblox Creator Store audio, or do you have a sound budget?
 5. Are you OK cutting Auto-Thrower and Auto-Washer (GDD top sellers) for fairness?
 6. Do you have a Roblox group (for audio ownership and a group-join reward)?
+
+---
+
+## Owner decisions (2026-11-19)
+
+The owner answered section 12. These override anything earlier in this spec; the sections they touch were edited to match.
+
+1. **Core first.** Build the basic core of the game first (the vertical slice in section 11: throw, Mama Hen, egg flight, wash, hatch, pen income, Lift Bench, onboarding), carrying in the improvements and findings from the research (audit fixes, study-game mechanics, BG UI patterns). Extras (Book, Golden Hour, Rebirth, monetisation, daily gifts, leaderboards, art pass) come only after the core loop playtests as fun (VS-11 go).
+2. **No save wipe: convert old pets.** VS-2 reads the old record (DataStore `EggSanctuary_SaveData_v6`, key `Player_<UserId>`) on a player's first v3 load and converts it:
+   - Each `GardenPets` entry maps by `Name` to the v3 species of the same name (`Meadow Bunny`, `Slime Drake`, `Ember Hound`, `Coral Leviathan`, `Galaxy Titan`, all in table 4.4). The old `Rarity` and `Income` are dropped: v3 rarity and income come from the species. `Mutation` (`Normal`, `Shiny`, `Golden`, `Rainbow`) carries over as is. Unknown names become `Meadow Bunny` and are logged.
+   - Converted pets fill the pen first (best income first), the rest go to storage. `RelX` / `RelZ` are dropped.
+   - Old currency, Strength, FoodTier, MaxSlots and CleanerUpgrades do not map onto v3 tracks; the player starts the v3 economy fresh but keeps every pet, and the tutorial still runs (it is short and the stations are new).
+   - v3 writes to a new v7 key only and never writes to the v6 store, so the old game stays restorable with its saves (see `backup-pre-v3.md`). Mark converted records with `migratedFrom = 6`.
+3. **One Mama Hen rig in five colours** is fine (section 3.3 stands).
+4. **Keep 6 plots per server** (section 3.0 and VS-3 stand; `MaxPlayers` 6).
+5. **Creator Store audio may be used** (section 8 sound list).
+6. **Keep Auto-Thrower and Auto-Washer**, redesigned to fit v3 (section 9 passes table). The spec had cut them because they sold skipping the game. Redesign rules:
+   - Automation is always slower than active play: Auto-Thrower makes a GOOD throw (multiplier 1.0, never SWEET) every 6 s; Auto-Washer washes at 40% of the player's Nozzle DPS.
+   - It never unlocks content: auto throws use the same distance formula without the SWEET bonus, so new zones still need active SWEET throws or more Strength.
+   - It runs only while the player is in the server and on their own plot; it pauses while the player is spraying or throwing by hand, and never runs offline (offline earnings stay cut).
+   - Both are numbers in `Economy.luau` (`autoThrowInterval`, `autoWashDpsShare`) and the server owns every auto action. Built in P-10, after the core.
+7. **No Roblox group yet.** No group-join reward in the first build (none is specced; do not add one). Audio must come from the Creator Store or the owner's own uploads, never "uploaded under the group".

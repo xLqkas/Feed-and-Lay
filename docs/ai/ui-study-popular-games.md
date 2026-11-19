@@ -4,6 +4,8 @@ Research for the Feed and Lay UI restyle. Companion to `game-study-scare-your-fa
 
 Method: played live with `roblox-play/rbx.py`, Windows player at **1002x750**, fresh accounts' state, no Robux spent, no chat. Sizes below are measured in those screenshots and given as a **fraction of screen height (H)** or width (W). Sound was not capturable. Screenshots: `shots/ui-study/<game>/`.
 
+**Presets (second pass, same day):** each game's palette, type, HUD map, component recipes and frame-by-frame motion values are in `ui-presets/<game>.md`, with data modules in `src/client/UI/Presets/` (named by style: `DarkTiles` = Throw Food, `SlimPills` = Steal An Egg, `LightDock` = Pet Sim 99, `GlassPanels` = Scare Your Favorite Streamer). Motions were captured with a burst script at ~20 frames per second (contact sheets in `shots/ui-presets/`).
+
 ## 0. Games picked and why
 
 Live counts from livecounts.nl at about 20:40 UTC on 2026-11-19.

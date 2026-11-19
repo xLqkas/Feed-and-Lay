@@ -34,6 +34,45 @@ This replaces `design-v3.md` 7.1-7.4 where they disagree; the HUD contents (what
 - Labelled big tiles (Throw Food, 0.13 H) vs slim pills (Steal An Egg, 0.06 H) vs one dock button (PS99). **We use labelled tiles at 0.10 H**: young players read the label, and there are only five buttons.
 - Section-jump icons outside the Shop panel, value ribbons ("Most Value") on product cards, tilted "NEW!" sticker on a reveal, 3D decoration overhanging an event panel. Use the sticker and the jump icons; skip the rest for now.
 
+### 1.1 Which preset: a blend, element by element
+
+Four presets were captured (docs in `ui-presets/`, data in `src/client/UI/Presets/`):
+
+| Preset module | Game it comes from | Doc |
+|---|---|---|
+| `LightDock` | Pet Simulator 99 | `ui-presets/pet-sim-99.md` |
+| `DarkTiles` | Throw Food For Animals | `ui-presets/throw-food.md` |
+| `SlimPills` | Steal An Egg | `ui-presets/steal-an-egg.md` |
+| `GlassPanels` | Scare Your Favorite Streamer | `ui-presets/scare-streamer.md` |
+
+**Base: `LightDock`** for panels, outlines, buttons and type. Why: our uploaded art (SunGraphica) is cream panels with saturated bevelled buttons, which is the same family as LightDock's white panels with thick dark outlines; it is the most readable for young players; and it needs the least code-drawn art. Not the whole of LightDock: its single dock button hides the menus from new players, and its instant panel close feels abrupt.
+
+| Element | Take from | Values to use (from the preset module unless noted) | Why |
+|---|---|---|---|
+| Panel body, outline, radius | LightDock | cream art body + `Stroke.panel` 7 px `#2A2B31`-style dark rim, `Radius.panel` 26 | matches our art; thick dark rim reads on any background |
+| Panel title | LightDock idea + our ribbons | ribbon on the top edge, menu icon overhanging top-left (3.1) | LightDock's floating title with our ribbon art |
+| Close button | LightDock | overhanging top-right, 0.067-0.093 H | big, obvious, thumb-friendly |
+| Panel open | DarkTiles | `DarkTiles.Motion.panelOpen` (Scale 0.6 → 1, Back Out, 0.3 s; tune to ~3 % overshoot) | the bounce reads as playful; LightDock/SlimPills open with almost no motion |
+| Panel close | DarkTiles | `DarkTiles.Motion.panelClose` (Scale 1 → 0.77, Quad In, 0.15 s) | quick but not a jump cut |
+| HUD while a panel is open | DarkTiles | `hudTilesHide` / `hudTilesShow` (slide off 0.15 H, back with Back Out) | clears the screen on phone; LightDock hides only the quest card |
+| HUD menu buttons | DarkTiles | labelled square tiles (2.2), 0.10 H instead of 0.13 H, hover label colour + shine sweep | labels for young players; LightDock's dock hides menus, SlimPills is too small |
+| Button press / release | DarkTiles | `buttonPress` 0.98, `buttonRelease` Back Out 0.15 s (spec 4.1 keeps 0.94 for a stronger squash on phone) | measured, feels springy |
+| Buttons (colours, bevel) | LightDock + our art | `LightDock.Buttons.primary` / `accent`; `ButtonDepth` 6 | same family as `buttonWide*` art |
+| Currencies | LightDock | icon 0.048-0.06 H + number 0.035 H, no backing, left edge under the menu column | identical convention in all four; LightDock's position is phone-safe |
+| Counter on gain | DarkTiles + LightDock | count up (`DarkTiles.numberRoll` for ticks, `LightDock.counterRoll` for big gains) | |
+| Gain burst | GlassPanels | `GlassPanels.Motion.cashFly` (icons fly to the counter, stagger 0.015 s) | strongest reward feeling seen |
+| Error toast | SlimPills | `errorToastIn` (Scale 0.83 → 1, Back Out 0.3 s), hold 2.0 s, `errorToastOut`; position just above the hotbar | measured; clear and short |
+| Notification dot | SlimPills / LightDock colours | `#FF1B62`-style red, white "!" or count, white rim; add our own pulse (5) since none of the games pulse it | |
+| Objective | LightDock quest card **only** for count goals; otherwise plain line (DarkTiles / GlassPanels) | 2.4 | the card is great for "Earn 180 Coins" progress |
+| Rarity tiles | DarkTiles | whole tile in rarity colour, lighter top (3.2) | C4 |
+| Reveal | GlassPanels roll + DarkTiles flash and sticker | `GlassPanels.revealRoll`, `revealLand`; `DarkTiles.revealFlash`, `revealSticker` | |
+| Floor arrows | DarkTiles | `floorArrowScroll` (linear, one gap per 0.85 s) | measured |
+| Side drawer (Pets on PC) | SlimPills | `drawerOpen` (slide from right, Back Out 0.3 s) | measured; keeps the pen visible |
+| Shortcut wobble (new Daily gift, event) | LightDock | `shortcutWobble` ±8°, Sine InOut, loop | draws the eye without a pulse |
+| Type scale | own (6) | Fredoka One everywhere on HUD; sizes in 6 sit between LightDock and DarkTiles | |
+
+Where section 5 (Motion) and a preset disagree, **this table wins**; section 5 keeps the values for motions no preset covers (tabs, objective change, price turns affordable, timer urgent).
+
 ---
 
 ## 2. HUD
@@ -228,16 +267,17 @@ Order (Throw Food and Scare): white flash → rolling names (Scare) → land. La
 | Button hover (PC) | scale 1.00 → 1.04 | 0.12 s | Quad Out |
 | Button press | scale → 0.94, face down 4 px | 0.06 s | Quad Out |
 | Button release | → 1.0 with overshoot | 0.18 s | Back Out |
-| Panel open | shade fade 0 → 0.6 and blur 0 → 18; panel scale 0.85 → 1.0 and transparency in | 0.22 s | Back Out (scale), Quad Out (fade) |
-| Panel close | scale 1.0 → 0.9 + fade out | 0.14 s | Quad In |
-| Drawer open (Pets PC) | slide in from the right edge | 0.25 s | Quint Out |
+| Panel open | shade fade 0 → 0.6 and blur 0 → 18 (0.15 s, Quad Out); panel scale 0.6 → 1.0 (measured peak ~1.03) | 0.30 s | Back Out (`DarkTiles.panelOpen`) |
+| Panel close | scale 1.0 → 0.77, then hide; shade and blur out together | 0.15 s | Quad In (`DarkTiles.panelClose`) |
+| HUD columns while a panel is open | slide off their edge 0.15 H; return with overshoot | 0.15 s out, 0.30 s back (delay 0.05) | Quad In / Back Out (`DarkTiles.hudTiles*`) |
+| Drawer open (Pets PC) | slide in from the right edge, OffsetX 0.08 H → 0 | 0.30 s | Back Out (`SlimPills.drawerOpen`) |
 | Tab switch | content cross-fade; selected tab up 6 px | 0.12 s | Quad Out |
 | Menu columns hide (station mode) | slide off their edge 140 px + fade | 0.2 s | Quad In; back with Quad Out |
 | New HUD button | scale 0 → 1.15 → 1.0, then the dot pulses and the hand bobs | 0.35 s | Back Out |
 | Notification dot | pulse 1.0 → 1.15 → 1.0, loop | 1.2 s cycle | Sine InOut |
 | Currency change | number rolls; icon pop 1.0 → 1.15 → 1.0 | 0.4 s roll, 0.2 s pop | Quad Out |
 | Coin burst (gain from world or claim) | 8-20 `coin` icons spawn at the source, arc to the coin icon with random 0.0-0.15 s stagger, each shrinking to 0.6; the counter pops on each arrival | 0.6 s each | Quad In (position), Quad Out (spawn scale) |
-| Toast in / out | slide up 20 px + fade in; fade out | 0.18 s in, 0.3 s out | Back Out / Quad In |
+| Toast in / out | scale 0.83 → 1.0 + fade in; hold 2.0 s; fade out | 0.3 s in, 0.1 s out | Back Out / Linear (`SlimPills.errorToast*`) |
 | Objective change | old line fades up 10 px, new line pops 0.8 → 1.0 | 0.15 + 0.25 s | Quad In / Back Out |
 | Price turns affordable | price button pops 1.0 → 1.1 → 1.0 once, colour swaps red → green | 0.25 s | Back Out |
 | Error press | the pressed button shakes ±6 px x3 | 0.25 s | Linear |

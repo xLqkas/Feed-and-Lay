@@ -27,6 +27,10 @@
         },
         "EggRestoration3D": {
           "$path": "src/client/EggRestoration3D.client.luau"
+        },
+        "UI": {
+          "$path": "src/client/UI",
+          "$ignoreUnknownInstances": true
         }
       }
     },

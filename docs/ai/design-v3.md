@@ -107,7 +107,7 @@ State assumed: in the Reef, Nest 6, Pen 12, Nozzle Lv4, food Pancakes, about 450
 
 | Time | What happens |
 |---|---|
-| 0:00 | Player is on the Ledge. Banner shows the long goal: "Next: Gold Weights (200M) to reach the Starfield". |
+| 0:00 | Player is on the Ledge. Banner shows the long goal: "Next: Gold Weights (1.5B) to reach the Starfield". |
 | 0:00-0:10 | 6 throws, 1.5 s cooldown, each about 0.4-1.0 s charge. Each throw shows the compact **Eat Card** (2.2 s, bottom-centre) instead of throw cam. One egg comes back with a gold sparkle trail (rare-slot hint), and that throw forces throw cam for its egg return only (1.5 s). |
 | 0:10 | Step back 4 studs into the Washer ring. |
 | 0:10-0:45 | 6 Reef eggs at about 4.3 s each plus 0.6 s load = about 30 s. Common and Uncommon hatches use the **compact reveal** on the Hatch Pad (2.5 s, small card top-centre, no camera move). The sparkly egg is Legendary: full reveal, spraying pauses 5 s, server announcement "Filip hatched a LEGENDARY Coral Leviathan!". |
@@ -293,8 +293,8 @@ Distance = Strength x throw multiplier (max 1.25).
 |---|---|---|---|---|
 | 1 | Twig Weights | 1 | free | 50 -> 80: about 25 s |
 | 2 | Stone Weights | 10 | 50K | 80 -> 800: about 60 s |
-| 3 | Iron Weights | 100 | 3M | 800 -> 8,000: about 60 s |
-| 4 | Gold Weights | 1,000 | 200M | 8,000 -> 80,000: about 60 s |
+| 3 | Iron Weights | 100 | 6M | 800 -> 8,000: about 60 s |
+| 4 | Gold Weights | 1,000 | 1.5B | 8,000 -> 80,000: about 60 s |
 
 With the previous tier each gate takes about 10 minutes of lifting: possible (effort can replace coins) but slow.
 
@@ -306,8 +306,8 @@ With the previous tier each gate takes about 10 minutes of lifting: possible (ef
 | 2 | Carrot | 2 | 500 | `Food\Carrot\256w\Carrot 1st 256px.png` |
 | 3 | Blueberries | 4 | 15K | `Food\Blueberry\...` (1st, 256) |
 | 4 | Pancakes | 8 | 1M | `Food\Pancake\...` (1st, 256) |
-| 5 | Strawberry | 16 | 60M | `Nature\Strawberry\...` (1st, 256) |
-| 6 | Star Cookie | 32 | 3B | `Food\Cookie\256px\Cookie 1st 256px.png` |
+| 5 | Strawberry | 16 | 300M | `Nature\Strawberry\...` (1st, 256) |
+| 6 | Star Cookie | 32 | 10B | `Food\Cookie\256px\Cookie 1st 256px.png` |
 
 The best owned food is always used. Lucky Food pass doubles L.
 
@@ -405,7 +405,7 @@ From a simulation of 15 eggs with the pen keeping the best ones (mutations inclu
 
 ### 4.8 Rebirth
 
-- Available once the player has reached the Starfield. Cost 10B x 4^Rebirths. Maximum 10 rebirths in v3.
+- Available once the player has reached the Starfield. Cost 40B x 4^Rebirths. Maximum 10 rebirths in v3.
 - Resets: Coins, Strength (to 50), dumbbell, food, Nest slots.
 - Keeps: all pets (pen and storage), Pen slots, Nozzle, Book, passes, daily streak.
 - Gives per rebirth: +50% coins (additive), Strength per rep x (1 + Rebirths), a rebirth star on the base sign.
@@ -432,17 +432,17 @@ Expected timeline for an active player following the banner. "Gap" = time since 
 | 11:00 | Nozzle Lv3, Pen 9, Nest 5 | 60K, 10K, 20K | 1:30 |
 | 13:00 | Pen 10 | 50K | 2:00 |
 | 15:00 | Pancakes | 1M | 2:00 |
-| 19:00 | Iron Weights -> lift | 3M | 4:00 |
+| 19:00 | Iron Weights -> lift | 6M | 4:00 |
 | 20:00 | Coral Reef | lifting | 1:00 |
 | 22:00 | Nozzle Lv4, Pen 11 | 4M, 250K | 2:00 |
 | 25:00 | Nest 6, Pen 12 | 500K, 1.5M | 3:00 |
-| 30:00 | Strawberry | 60M | 5:00 |
-| 38:00 | Gold Weights -> lift | 200M | 8:00 |
+| 30:00 | Strawberry | 300M | 5:00 |
+| 38:00 | Gold Weights -> lift | 1.5B | 8:00 |
 | 40:00 | Starfield | lifting | 2:00 |
 | 43:00 | Nozzle Lv5 | 300M | 3:00 |
 | 48:00 | Pen 13, Pen 14, Nest 7 | 10M, 80M, 20M | 5:00 |
-| 55:00 | Star Cookie | 3B | 7:00 |
-| 70:00 | First rebirth | 10B | 15:00 |
+| 55:00 | Star Cookie | 10B | 7:00 |
+| 70:00 | First rebirth | 40B | 15:00 |
 
 Gaps are 0:10-1:30 in the first 10 minutes, 2-5 minutes until 30 minutes, 5-15 minutes after. Book claims (15 of them, plus Golden Hour) fill the longer gaps with smaller wins.
 

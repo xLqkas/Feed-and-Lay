@@ -8,7 +8,13 @@
         "$className": "Folder",
         "$ignoreUnknownInstances": true,
         "MainGameServer": {
-          "$path": "src/server/MainGameServer.server.luau"
+          "$path": "src/server/MainGameServer.server.luau",
+          "$properties": {
+            "Disabled": true
+          }
+        },
+        "V3": {
+          "$path": "src/server/v3"
         }
       },
       "DayNightCycle": {

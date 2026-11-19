@@ -201,6 +201,24 @@ Economy.PenSlotCost = {
     [16] = 5e9,
 }
 
+-- Server timings and ranges for the egg pipeline (sections 3.2-3.6)
+Economy.THROW_COOLDOWN = 1.5
+Economy.MAX_HOLD = 6 -- charge auto-cancels after this
+Economy.NEEDLE_HALF_CYCLE = 1.4 -- needle goes 0 -> 1 in this many seconds, then back
+Economy.ELAPSED_TOLERANCE = 0.15 -- client hold time accepted within this of the server's
+Economy.FOOD_FLIGHT = 1.2
+Economy.EGG_LAUNCH_AT = 2.5
+Economy.FLIGHT_TIME = 4.0 -- release to egg in nest
+Economy.TURNTABLE_DEG_PER_SEC = 40
+Economy.FACING_MIN_DOT = 0.2 -- chunk normal . view direction below this takes no damage
+Economy.SPRAY_DT_CAP = 0.15
+Economy.WASH_LOAD_DELAY = 0.6 -- next egg hops onto the turntable this long after the last one
+Economy.FULL_REVEAL_TIME = 6.5 -- 3.0 wobble + 2.0 roll + 1.5 hold
+Economy.COMPACT_REVEAL_TIME = 2.5
+Economy.FULL_REVEAL_HATCHES = 5 -- hatches 1-5 ever always get the full reveal
+Economy.LEDGE_RADIUS = 6 -- studs from the Ledge station
+Economy.WASHER_RADIUS = 10
+
 -- 3.7 Income bonuses
 Economy.REBIRTH_INCOME_BONUS = 0.5
 Economy.X2_COINS = 2

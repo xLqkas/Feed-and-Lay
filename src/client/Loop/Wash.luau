@@ -1,8 +1,9 @@
 --!strict
 -- Washer (design-v3 3.5, VS-7): step into the ring to load the oldest egg; the camera sits on the turntable's
 -- +Z side (the server's facing check assumes it). Hold and aim (mouse, touch, gamepad R2 + right stick) to spray.
--- Every 0.1 s the client sends the aim point on the unit egg (SprayHits); the server picks the chunks, owns HP and
--- answers with ChunkPopped / WashDone / HatchResult / WashLoaded. Progress is popped / chunks, never sent.
+-- Every 0.1 s the client sends the aim point on the unit egg (SprayHits); the server picks the blobs, owns HP and
+-- answers with ChunkHit (a quarter of a blob knocked off) / ChunkPopped / WashDone / HatchResult / WashLoaded.
+-- Each mud blob is drawn as BLOB_STAGES lumps; one flies off per ChunkHit. Progress comes from the server's HP.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -26,18 +27,21 @@ local RING_LEAVE = 6
 local SPRAY_EVERY = 0.1
 local CAMERA_DISTANCE = 6
 local RADII = Fx.EGG_SIZE / 2
-local CHUNK_SIZE = Vector3.new(0.8, 0.8, 0.4) -- a pair of chunks reads as one blob about the aim radius wide
+local LUMP_SIZE = Vector3.new(0.75, 0.75, 0.45) -- 4 lumps make one blob about the aim radius wide
+-- lump offsets on the egg surface (studs, blob-local x/y); the big centre lump goes last
+local LUMPS = { Vector2.new(-0.32, 0.22), Vector2.new(0.34, 0.18), Vector2.new(0.02, -0.34), Vector2.new(0, 0) }
 local CURSOR_SPEED = 700 -- gamepad aim, px per second
 
 local Wash = {}
-type Chunk = { part: BasePart, normal: Vector3, hp: number, alive: boolean }
+type Chunk = { parts: { BasePart }, normal: Vector3, frac: number, alive: boolean }
 local active = false
 local pending = false
 local blockedUntil = 0 -- after X / walking out: until the player leaves the ring; after a refusal: 2 s
 local info: any = nil
 local egg: BasePart? = nil
 local chunks: { Chunk } = {}
-local popped = 0
+local combo = 0
+local comboLabelAt = 0
 local hopUntil = 0
 local lastSpray = os.clock()
 local touchPos: Vector2? = nil
@@ -72,6 +76,20 @@ mist.Lifetime = NumberRange.new(0.2, 0.4)
 mist.Size = NumberSequence.new(0.3, 0)
 mist.Transparency = NumberSequence.new(0.3, 1)
 mist.Parent = a1
+local foam = Instance.new("ParticleEmitter") -- soap foam where the jet hits mud
+foam.Color = ColorSequence.new(Color3.fromRGB(255, 255, 255))
+foam.Rate = 0
+foam.Speed = NumberRange.new(1, 3)
+foam.SpreadAngle = Vector2.new(80, 80)
+foam.Lifetime = NumberRange.new(0.4, 0.8)
+foam.Size = NumberSequence.new({
+    NumberSequenceKeypoint.new(0, 0.15),
+    NumberSequenceKeypoint.new(0.3, 0.35),
+    NumberSequenceKeypoint.new(1, 0),
+})
+foam.Transparency = NumberSequence.new(0.1, 0.6)
+foam.Acceleration = Vector3.new(0, -4, 0)
+foam.Parent = a1
 
 local crosshair = Kit.frame(Hud.wash.frame, "Crosshair", Theme.Colors.paper)
 crosshair.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -110,7 +128,7 @@ local function chunkPose(frame: CFrame, c: Chunk): (Vector3, CFrame)
     local localPos = c.normal * RADII
     local pos = frame:PointToWorldSpace(localPos)
     local dir = frame:VectorToWorldSpace(c.normal)
-    return pos, CFrame.lookAt(pos, pos + dir)
+    return pos, CFrame.lookAt(pos, pos + dir, frame.UpVector)
 end
 
 local function cameraShot(): CFrame
@@ -121,14 +139,59 @@ end
 
 local function clearChunks()
     for _, c in chunks do
-        c.part:Destroy()
+        for _, p in c.parts do
+            p:Destroy()
+        end
     end
     chunks = {}
 end
 
 local function setProgress()
     if info then
-        Hud.setWashProgress(popped / info.chunks, info.zoneName)
+        local clean = 0
+        for _, c in chunks do
+            clean += 1 - c.frac
+        end
+        Hud.setWashProgress(clean / math.max(#chunks, 1), info.zoneName)
+    end
+end
+
+local function toScreen(pos: Vector3): UDim2
+    local camera = Workspace.CurrentCamera
+    local screen = camera:WorldToViewportPoint(pos)
+    local inset = game:GetService("GuiService"):GetGuiInset()
+    return UDim2.fromScale(screen.X / camera.ViewportSize.X, (screen.Y - inset.Y) / camera.ViewportSize.Y)
+end
+
+-- Flings one lump off the egg with a splat, foam and a floating number
+local function knock(c: Chunk, big: boolean)
+    local part = table.remove(c.parts, 1)
+    if not part or not info then
+        return
+    end
+    local pos = part.Position
+    local out = (pos - center().Position).Unit
+    Fx.tween(part, 0.35, {
+        Position = pos + out * 2.2 + Vector3.new(0, -1.2, 0),
+        Size = Vector3.zero,
+        Orientation = part.Orientation + Vector3.new(180, 90, 0),
+    })
+    task.delay(0.36, function()
+        part:Destroy()
+    end)
+    Fx.burst(pos, Fx.MUD[info.zone], if big then 16 else 8, if big then 14 else 9, if big then 0.5 else 0.35)
+    Fx.burst(pos, Color3.fromRGB(255, 255, 255), 6, 4, 0.3, 0.6) -- foam puff
+    Sfx.play("splat", (if big then 0.9 else 1.15) + 0.05 * combo, if big then 0.9 else 0.55)
+    local pct = math.floor(100 / (info.chunks * Economy.BLOB_STAGES) + 0.5)
+    Kit.floatingNumber(Hud.screen.root, "+" .. pct .. "%", Theme.Colors.money, toScreen(pos))
+end
+
+local function showCombo(n: number)
+    combo = n
+    if n >= 3 and os.clock() - comboLabelAt > 0.35 then
+        comboLabelAt = os.clock()
+        local label = if n >= Economy.COMBO_MAX then "MAX COMBO!" else "COMBO x" .. n
+        Kit.floatingNumber(Hud.screen.root, label, Theme.Colors.reward, UDim2.fromScale(0.5, 0.3))
     end
 end
 
@@ -147,19 +210,21 @@ local function load(newInfo: any)
     hopUntil = os.clock() + 0.6
     Fx.tween(part, 0.6, { Size = Fx.EGG_SIZE })
     Fx.arc(part, part.Position, target, 3, 0.6, 0)
-    popped = 0
+    combo = 0
     for i, n in newInfo.normals do
-        local alive = newInfo.hp[i] > 0
-        if not alive then
-            popped += 1
+        local frac = newInfo.hp[i] / newInfo.chunkHP
+        local parts = {}
+        for k = #LUMPS - math.ceil(frac * Economy.BLOB_STAGES - 1e-6) + 1, #LUMPS do
+            local p = Fx.part("Mud", LUMP_SIZE * (if k == #LUMPS then 1.35 else 1), Fx.MUD[newInfo.zone])
+            p.Material = Enum.Material.Mud
+            p.Transparency = 1 -- shown once the hop lands
+            p:SetAttribute("Lump", k)
+            local mesh = Instance.new("SpecialMesh")
+            mesh.MeshType = Enum.MeshType.Sphere
+            mesh.Parent = p
+            table.insert(parts, p)
         end
-        local p = Fx.part("Mud", CHUNK_SIZE, Fx.MUD[newInfo.zone])
-        p.Material = Enum.Material.Mud
-        p.Transparency = 1 -- shown once the hop lands
-        local mesh = Instance.new("SpecialMesh")
-        mesh.MeshType = Enum.MeshType.Sphere
-        mesh.Parent = p
-        table.insert(chunks, { part = p, normal = Vector3.new(n[1], n[2], n[3]), hp = newInfo.hp[i], alive = alive })
+        table.insert(chunks, { parts = parts, normal = Vector3.new(n[1], n[2], n[3]), frac = frac, alive = frac > 0 })
     end
     Hud.showWash(true, newInfo.zone)
     setProgress()
@@ -312,40 +377,49 @@ local function spray(dt: number)
     hitPart.Position = hit or (ray.Origin + ray.Direction.Unit * 12)
     beam.Enabled = true
     mist.Rate = if hit then 40 else 0
+    foam.Rate = 0
     if hiss then
         hiss.Volume = 0.35
     end
     if os.clock() - lastSpray < SPRAY_EVERY then
         return
     end
-    local sprayDt = math.min(os.clock() - lastSpray, Economy.SPRAY_DT_CAP)
     lastSpray = os.clock()
     if not aim then
         return
     end
-    local candidates = {}
-    for i, c in chunks do
-        if c.alive and facing(c.normal) >= info.facingMin then
-            local d = (projected(c.normal) - aim).Magnitude
-            if d <= Economy.AIM_RADIUS then
-                table.insert(candidates, { id = i, d = d })
-            end
+    -- feedback only (the server judges): foam and a higher hiss while the jet is on visible mud
+    local onMud = false
+    for _, c in chunks do
+        local near = (projected(c.normal) - aim).Magnitude <= Economy.AIM_RADIUS
+        if c.alive and near and facing(c.normal) >= info.facingMin then
+            onMud = true
         end
     end
-    table.sort(candidates, function(a, b)
-        return a.d < b.d
-    end)
-    for k = 1, math.min(#candidates, info.maxChunksPerHit) do
-        local c = chunks[candidates[k].id]
-        c.hp = math.max(0.15 * info.chunkHP, c.hp - Economy.Nozzles[info.nozzleLevel].DPS * sprayDt) -- shrink preview only
-    end
+    foam.Rate = if onMud then 60 else 0
     if hiss then
-        hiss.PlaybackSpeed = if #candidates > 0 then 1.2 else 1
+        hiss.PlaybackSpeed = if onMud then 1.25 else 1
     end
     sprayRemote:FireServer({ eggId = info.eggId, aim = { aim.X, aim.Y } })
 end
 
-local function onPopped(eggId: number, id: number)
+local function onHit(eggId: number, id: number, frac: number, newCombo: number?)
+    if not info or eggId ~= info.eggId then
+        return
+    end
+    local c = chunks[id]
+    if not c or not c.alive then
+        return
+    end
+    c.frac = frac
+    showCombo(newCombo or 0)
+    while #c.parts > math.ceil(frac * Economy.BLOB_STAGES - 1e-6) do
+        knock(c, false)
+    end
+    setProgress()
+end
+
+local function onPopped(eggId: number, id: number, newCombo: number?)
     if not info or eggId ~= info.eggId then
         return
     end
@@ -354,23 +428,11 @@ local function onPopped(eggId: number, id: number)
         return
     end
     c.alive = false
-    popped += 1
-    local pos = c.part.Position
-    Fx.tween(c.part, 0.1, { Size = Vector3.zero })
-    task.delay(0.12, function()
-        c.part.Transparency = 1
-    end)
-    Fx.burst(pos, Fx.MUD[info.zone], 10, 10, 0.45)
-    Sfx.play("splat", 1 + 0.04 * popped, 0.8)
-    local camera = Workspace.CurrentCamera
-    local screen = camera:WorldToViewportPoint(pos)
-    local inset = game:GetService("GuiService"):GetGuiInset()
-    Kit.floatingNumber(
-        Hud.screen.root,
-        "+" .. math.floor(100 / info.chunks + 0.5) .. "%",
-        Theme.Colors.money,
-        UDim2.fromScale(screen.X / camera.ViewportSize.X, (screen.Y - inset.Y) / camera.ViewportSize.Y)
-    )
+    c.frac = 0
+    showCombo(newCombo or 0)
+    while #c.parts > 0 do
+        knock(c, #c.parts == 1)
+    end
     setProgress()
 end
 
@@ -379,17 +441,48 @@ local function onDone(eggId: number)
         return
     end
     local part = egg :: BasePart
-    popped = info.chunks
+    for _, c in chunks do
+        c.frac = 0
+    end
     setProgress()
     clearChunks()
+    foam.Rate = 0
+    -- squeaky clean: the shell turns glossy, a white shine sweeps over it, sparkles, squeak + chime
     part.Color = Fx.SHELL
     part.Material = Enum.Material.SmoothPlastic
+    part.Reflectance = 0.5
+    Fx.tween(part, 0.8, { Reflectance = 0.05 })
+    local shine = Instance.new("Highlight")
+    shine.FillColor = Color3.new(1, 1, 1)
+    shine.OutlineColor = Color3.fromRGB(255, 240, 150)
+    shine.FillTransparency = 0.15
+    shine.OutlineTransparency = 0
+    shine.DepthMode = Enum.HighlightDepthMode.Occluded
+    shine.Parent = part
+    Fx.tween(shine, 0.7, { FillTransparency = 1, OutlineTransparency = 1 })
+    local sweep = Fx.part("Shine", Vector3.new(0.25, Fx.EGG_SIZE.Y * 1.1, Fx.EGG_SIZE.Z * 1.05), Color3.new(1, 1, 1))
+    sweep.Material = Enum.Material.Neon
+    sweep.Transparency = 0.35
+    local base = part.CFrame * CFrame.Angles(0, 0, math.rad(-25))
+    sweep.CFrame = base * CFrame.new(-Fx.EGG_SIZE.X * 0.7, 0, 0)
+    Fx.tween(sweep, 0.45, { CFrame = base * CFrame.new(Fx.EGG_SIZE.X * 0.7, 0, 0), Transparency = 0.9 })
+    task.delay(0.5, function()
+        sweep:Destroy()
+        shine:Destroy()
+    end)
+    local sparkles = Instance.new("Sparkles")
+    sparkles.SparkleColor = Color3.fromRGB(255, 250, 200)
+    sparkles.Parent = part
+    task.delay(1.2, function()
+        sparkles.Enabled = false
+    end)
     Fx.tween(part, 0.15, { Size = Fx.EGG_SIZE * 1.15 })
     task.delay(0.15, function()
         Fx.tween(part, 0.25, { Size = Fx.EGG_SIZE }, Enum.EasingStyle.Back)
     end)
-    Fx.burst(part.Position, Color3.fromRGB(220, 240, 255), 20, 12, 0.4, 0.7)
-    Hud.popWord("CLEAN!", Theme.Colors.reward)
+    Fx.burst(part.Position, Color3.fromRGB(220, 240, 255), 24, 12, 0.4, 0.7)
+    Hud.popWord("SQUEAKY CLEAN!", Theme.Colors.reward)
+    Sfx.play("squeak", 1.1, 0.8)
     Sfx.play("chime")
     Hatch.handOver(eggId, part)
     egg = nil
@@ -397,6 +490,7 @@ local function onDone(eggId: number)
 end
 
 function Wash.init()
+    Ctx.remotes:WaitForChild("ChunkHit").OnClientEvent:Connect(onHit)
     Ctx.remotes:WaitForChild("ChunkPopped").OnClientEvent:Connect(onPopped)
     Ctx.remotes:WaitForChild("WashDone").OnClientEvent:Connect(onDone)
     Ctx.remotes:WaitForChild("WashLoaded").OnClientEvent:Connect(function(newInfo: any)
@@ -463,9 +557,11 @@ function Wash.init()
             for _, c in chunks do
                 if c.alive then
                     local _, cf = chunkPose(frame, c)
-                    c.part.CFrame = cf
-                    c.part.Transparency = 0
-                    c.part.Size = CHUNK_SIZE * (0.6 + 0.4 * c.hp / info.chunkHP)
+                    for _, p in c.parts do
+                        local o = LUMPS[p:GetAttribute("Lump") :: number]
+                        p.CFrame = cf * CFrame.new(o.X, o.Y, 0)
+                        p.Transparency = 0
+                    end
                 end
             end
         end

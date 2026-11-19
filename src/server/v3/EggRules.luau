@@ -191,21 +191,14 @@ function EggRules.release(
     }
 end
 
--- Unit normal of chunk i (1..n) in the egg's local space. Chunks come in pairs; each pair sits on its own
--- height band (projected y from -BAND_SPAN to +BAND_SPAN), so a fixed aim point can only ever reach one
--- pair while the turntable spins. The wash camera looks along -Z: a chunk faces it when its rotated normal
--- has a large +Z part.
+-- Unit normal of mud blob i (1..n) in the egg's local space: blobs spread evenly around the egg, heights
+-- staggered so each side shows two or three. The wash camera looks along -Z: a blob faces it when its rotated
+-- normal has a large +Z part.
 function EggRules.chunkNormal(i: number, n: number): { number }
-    local npairs = n // 2
-    local c = (i - 1) // 2 -- pair index 0..pairs-1
-    local y = if npairs > 1 then -Economy.BAND_SPAN + 2 * Economy.BAND_SPAN * c / (npairs - 1) else 0
-    local el = math.asin(y)
-    -- shortcut: pair azimuths step by 2/pairs of a turn so neighbouring bands are not side by side;
-    -- needs an odd pair count (3 and 5 today)
-    local az = 2 * math.pi * ((2 * c) % npairs) / npairs
-    local half = math.asin(math.min(Economy.PAIR_HALF_GAP / math.cos(el), 1))
-    az += if i % 2 == 1 then -half else half
-    return { math.cos(el) * math.sin(az), y, math.cos(el) * math.cos(az) }
+    local y = 0.45 * math.sin(i * 2.4)
+    local az = 2 * math.pi * (i - 1) / n
+    local r = math.sqrt(1 - y * y)
+    return { r * math.sin(az), y, r * math.cos(az) }
 end
 
 -- Where a chunk appears in the wash view at a turntable angle: x, y on the unit egg as seen from +Z
@@ -298,10 +291,17 @@ function EggRules.stopWash(data: any, rt: Runtime)
 end
 
 -- Applies one spray batch aimed at `aim` = { x, y }: the spray point on the unit egg as seen by the wash
--- camera (egg-local hit point divided by the egg's radii). Only facing chunks within AIM_RADIUS of the aim
--- take damage, nearest first, up to the nozzle's chunk cap. Returns the chunk ids popped by it, or nil and a
--- reason when the batch is rejected.
-function EggRules.spray(data: any, rt: Runtime, now: number, eggId: any, aim: any): ({ number }?, string?)
+-- camera (egg-local hit point divided by the egg's radii). See Economy's wash block for the rule: a moving aim
+-- on the egg scrubs every facing blob, blobs near the aim take full damage with a combo, a parked aim does
+-- nothing. Returns the blob ids popped, nil (or nil and a reason when rejected), and the visible knocks
+-- { { id, hpFraction } } plus the combo count after this batch.
+function EggRules.spray(
+    data: any,
+    rt: Runtime,
+    now: number,
+    eggId: any,
+    aim: any
+): ({ number }?, string?, { { number } }?, number?)
     local egg = findEgg(data, rt.washingId)
     if not egg or egg.id ~= eggId then
         return nil, "not washing that egg"
@@ -316,9 +316,14 @@ function EggRules.spray(data: any, rt: Runtime, now: number, eggId: any, aim: an
 
     local dt = math.min(now - egg.lastHit, Economy.SPRAY_DT_CAP)
     egg.lastHit = now
-    local popped = {}
-    if dt <= 0 then
-        return popped, nil
+    local last = egg.lastAim
+    egg.lastAim = { ax, ay }
+    local popped, knocks = {}, {}
+    -- movement and combo are per second of spraying, so sending faster gives nothing
+    local moved = last ~= nil and math.sqrt((ax - last[1]) ^ 2 + (ay - last[2]) ^ 2) >= Economy.AIM_MOVE_MIN * dt / 0.1
+    if dt <= 0 or not moved or ax * ax + ay * ay > 1.1 then
+        egg.comboTime = 0 -- parked or off the egg
+        return popped, nil, knocks, 0
     end
     local angle = EggRules.turntableAngle(egg, now)
     local hits = {}
@@ -326,24 +331,30 @@ function EggRules.spray(data: any, rt: Runtime, now: number, eggId: any, aim: an
         local normal = EggRules.chunkNormal(id, egg.chunks)
         if egg.hp[id] > 0 and EggRules.facing(normal, angle) >= Economy.FACING_MIN_DOT then
             local x, y = EggRules.projected(normal, angle)
-            local d = math.sqrt((x - ax) ^ 2 + (y - ay) ^ 2)
-            if d <= Economy.AIM_RADIUS then
-                table.insert(hits, { id = id, d = d })
-            end
+            table.insert(hits, { id = id, d = math.sqrt((x - ax) ^ 2 + (y - ay) ^ 2) })
         end
     end
     table.sort(hits, function(p, q)
         return p.d < q.d
     end)
-    local damage = Economy.Nozzles[data.nozzleLevel].DPS * dt
-    for k = 1, math.min(#hits, Economy.Nozzles[data.nozzleLevel].MaxChunksPerHit) do
-        local id = hits[k].id
-        egg.hp[id] = math.max(0, egg.hp[id] - damage)
-        if egg.hp[id] == 0 then
-            table.insert(popped, id)
+    local nozzle = Economy.Nozzles[data.nozzleLevel]
+    local direct = #hits > 0 and hits[1].d <= Economy.AIM_RADIUS
+    egg.comboTime = if direct then (egg.comboTime or 0) + dt else 0
+    local combo = math.min(math.floor(egg.comboTime * 10 + 1e-6), Economy.COMBO_MAX)
+    local damage = nozzle.DPS * dt * (1 + Economy.COMBO_STEP * combo)
+    local maxHP = Economy.Zones[egg.zone].ChunkHP
+    for k, h in hits do
+        local share = if k <= nozzle.MaxChunksPerHit and h.d <= Economy.AIM_RADIUS then 1 else Economy.SCRUB_SHARE
+        local before = egg.hp[h.id]
+        egg.hp[h.id] = math.max(0, before - damage * share)
+        local stages = Economy.BLOB_STAGES
+        if egg.hp[h.id] == 0 then
+            table.insert(popped, h.id)
+        elseif math.ceil(egg.hp[h.id] / maxHP * stages) < math.ceil(before / maxHP * stages) then
+            table.insert(knocks, { h.id, egg.hp[h.id] / maxHP })
         end
     end
-    return popped, nil
+    return popped, nil, knocks, combo
 end
 
 -- Where a new pet goes (3.6): free pen spot, else swap with the worst pen pet if better, else storage

@@ -27,7 +27,7 @@ local RADIUS = { Ledge = Economy.LEDGE_RADIUS, Washer = Economy.WASHER_RADIUS, L
 local folder = Instance.new("Folder")
 folder.Name = "RemotesV3"
 local events: { [string]: RemoteEvent } = {}
-for _, name in { "ChunkPopped", "WashDone", "HatchResult", "WashLoaded" } do
+for _, name in { "ChunkPopped", "ChunkHit", "WashDone", "HatchResult", "WashLoaded" } do
     local ev = Instance.new("RemoteEvent")
     ev.Name = name
     ev.Parent = folder

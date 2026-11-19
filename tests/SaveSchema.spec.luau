@@ -202,7 +202,7 @@ do
             { id = 9, species = "Meadow Bunny", mutation = "Normal", pen = true },
         },
         nest = {
-            { id = 20, zone = 5, species = "Bog Frog", mutation = "Golden", chunks = 6 }, -- zone mismatch
+            { id = 20, zone = 5, species = "Bog Frog", mutation = "Golden", chunks = Economy.TUTORIAL_CHUNKS }, -- zone mismatch
             { id = 21, species = "Nope" },
             42,
         },
@@ -235,7 +235,10 @@ do
         end
     end
     check(titan and titan.pen, "best pet stays in the pen")
-    check(#d.nest == 1 and d.nest[1].zone == 2 and d.nest[1].chunks == 6, "egg zone follows species")
+    check(
+        #d.nest == 1 and d.nest[1].zone == 2 and d.nest[1].chunks == Economy.TUTORIAL_CHUNKS,
+        "egg zone follows species"
+    )
     check(not ids[d.nest[1].id], "egg id does not collide with a pet id")
     check(d.nextId > 21, "nextId above every id")
     check(d.book["Bog Frog"].claimed == false and d.book["Bog Frog"].mutations.Fake == nil, "book cleaned")
@@ -273,9 +276,23 @@ do
         { id = 2, species = "Bog Frog", mutation = "Golden", pen = false },
     }
     -- Runtime fields EggRules adds must not be saved
-    local flying: any = { id = 3, zone = 1, species = "Clover Fawn", mutation = "Shiny", sparkle = true, chunks = 10 }
+    local flying: any = {
+        id = 3,
+        zone = 1,
+        species = "Clover Fawn",
+        mutation = "Shiny",
+        sparkle = true,
+        chunks = Economy.CHUNKS_PER_EGG,
+    }
     flying.state, flying.arrivesAt = "Flight", 99
-    local washing: any = { id = 4, zone = 2, species = "Bog Frog", mutation = "Normal", sparkle = false, chunks = 10 }
+    local washing: any = {
+        id = 4,
+        zone = 2,
+        species = "Bog Frog",
+        mutation = "Normal",
+        sparkle = false,
+        chunks = Economy.CHUNKS_PER_EGG,
+    }
     washing.state, washing.hp, washing.washStart = "Washing", { 0, 0, 5 }, 12
     d.nest = { flying, washing }
     d.book["Moss Turtle"] = { found = true, claimed = true, mutations = { Normal = true } }

@@ -45,7 +45,7 @@ Economy.FIRST_EGG = "Moss Turtle" -- the first egg ever is always this (section 
 -- 4.1 Zones. Distance = Strength x throw multiplier (max 1.25).
 Economy.Zones = {
     { Id = 1, Name = "Dewdrop Meadow", MinDist = 0, MaxDist = 100, StrengthGate = 0, ChunkHP = 10, Tint = "cream" },
-    { Id = 2, Name = "Bog Marsh", MinDist = 100, MaxDist = 1000, StrengthGate = 80, ChunkHP = 30, Tint = "green" },
+    { Id = 2, Name = "Bog Marsh", MinDist = 100, MaxDist = 1000, StrengthGate = 80, ChunkHP = 20, Tint = "green" },
     {
         Id = 3,
         Name = "Ember Volcano",
@@ -175,9 +175,10 @@ Economy.Mutations = {
 }
 Economy.GOLDEN_HOUR_MUTATION = 3
 
--- 4.6 Nozzle. AvgChunksHit is the design's expected chunks hit per spray, used for wash-time estimates.
+-- 4.6 Nozzle. AvgChunksHit: average blobs' worth of full damage per second of spraying, fitted to the lune wash
+-- simulation (tests/EggService.spec.luau 5b), used for wash-time estimates.
 Economy.Nozzles = {
-    { Level = 1, Name = "Garden Hose", DPS = 10, Radius = 1.5, MaxChunksPerHit = 2, AvgChunksHit = 1.4, Cost = 0 },
+    { Level = 1, Name = "Garden Hose", DPS = 10, Radius = 1.5, MaxChunksPerHit = 2, AvgChunksHit = 1.05, Cost = 0 },
     {
         Level = 2,
         Name = "Pressure Wand",
@@ -199,9 +200,10 @@ Economy.Nozzles = {
         Cost = 300e6,
     },
 }
-Economy.CHUNKS_PER_EGG = 10
-Economy.TUTORIAL_CHUNKS = 6
+Economy.CHUNKS_PER_EGG = 5
+Economy.TUTORIAL_CHUNKS = 4
 Economy.MIN_WASH_TIME = 1.5
+Economy.WASH_SWEEP_FLOOR = 3.5 -- even an instant nozzle waits for the back blobs to turn into view
 
 -- 4.6 Slot costs, keyed by the slot being bought
 Economy.NestSlotCost = { [3] = 100, [4] = 1e3, [5] = 20e3, [6] = 500e3, [7] = 20e6, [8] = 1e9 }
@@ -226,14 +228,20 @@ Economy.ELAPSED_TOLERANCE = 0.15 -- client hold time accepted within this of the
 Economy.FOOD_FLIGHT = 1.2
 Economy.EGG_LAUNCH_AT = 2.5
 Economy.FLIGHT_TIME = 4.0 -- release to egg in nest
-Economy.TURNTABLE_DEG_PER_SEC = 40
-Economy.FACING_MIN_DOT = 0.2 -- chunk normal . view direction below this takes no damage
+Economy.TURNTABLE_DEG_PER_SEC = 60
+Economy.FACING_MIN_DOT = 0.1 -- chunk normal . view direction below this takes no damage
 Economy.SPRAY_DT_CAP = 0.15
--- Wash aim (unit-egg units: 1 = the egg's radius). A spray hits facing chunks within AIM_RADIUS of the aim
--- point; chunk pairs sit on height bands spread over -BAND_SPAN..BAND_SPAN, PAIR_HALF_GAP either side of a pair.
-Economy.AIM_RADIUS = 0.19
-Economy.BAND_SPAN = 0.8
-Economy.PAIR_HALF_GAP = 0.07
+-- Wash (playtest Q2): a few big mud blobs. Unit-egg units (1 = the egg's radius). Every batch whose aim point
+-- is on the egg and has moved at least AIM_MOVE_MIN since the last batch scrubs every facing blob at
+-- SCRUB_SHARE of the nozzle DPS; blobs within AIM_RADIUS of the aim (nearest first, up to the nozzle's cap) take
+-- full damage. Spraying with a direct hit builds a combo (+COMBO_STEP per 0.1 s, up to COMBO_MAX steps); a
+-- parked aim does nothing and resets the combo. AIM_MOVE_MIN is per 0.1 s of spraying.
+Economy.AIM_RADIUS = 0.45
+Economy.AIM_MOVE_MIN = 0.04
+Economy.SCRUB_SHARE = 0.4
+Economy.COMBO_STEP = 0.05
+Economy.COMBO_MAX = 10
+Economy.BLOB_STAGES = 4 -- a blob knocks off a visible chunk (ChunkHit) at each quarter of its HP
 Economy.WASH_LOAD_DELAY = 0.6 -- next egg hops onto the turntable this long after the last one
 Economy.FULL_REVEAL_TIME = 6.5 -- 3.0 wobble + 2.0 roll + 1.5 hold
 Economy.COMPACT_REVEAL_TIME = 2.5
@@ -352,11 +360,11 @@ function Economy.mutationMultiplier(mutation: string?): number
     return 1
 end
 
--- Expected seconds to wash one egg at a nozzle level (4.6 table), floored at MIN_WASH_TIME
+-- Expected seconds to wash one egg at a nozzle level, floored at WASH_SWEEP_FLOOR
 function Economy.washTimeEstimate(zoneId: number, nozzleLevel: number, chunks: number?): number
     local nozzle = Economy.Nozzles[nozzleLevel]
     local hp = Economy.Zones[zoneId].ChunkHP * (chunks or Economy.CHUNKS_PER_EGG)
-    return math.max(Economy.MIN_WASH_TIME, hp / (nozzle.DPS * nozzle.AvgChunksHit))
+    return math.max(Economy.WASH_SWEEP_FLOOR, hp / (nozzle.DPS * nozzle.AvgChunksHit))
 end
 
 function Economy.petIncome(pet: Pet): number

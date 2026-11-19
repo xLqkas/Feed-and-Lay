@@ -309,9 +309,12 @@ function EggService:sprayHits(player: any, payload: any)
         if not self.deps.isNear(player, "Washer") then
             return
         end
-        local popped = EggRules.spray(s.data, s.rt, now, payload.eggId, payload.aim)
+        local popped, _, knocks, combo = EggRules.spray(s.data, s.rt, now, payload.eggId, payload.aim)
+        for _, k in knocks or {} do
+            self.deps.send(player, "ChunkHit", payload.eggId, k[1], k[2], combo)
+        end
         for _, id in popped or {} do
-            self.deps.send(player, "ChunkPopped", payload.eggId, id)
+            self.deps.send(player, "ChunkPopped", payload.eggId, id, combo)
         end
     end)
     if not ok then

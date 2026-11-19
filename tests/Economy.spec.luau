@@ -103,12 +103,14 @@ strictlyIncreasing("Pen", Economy.START_PEN, Economy.MAX_PEN - 1)
 strictlyIncreasing("Rebirth", 0, Economy.MAX_REBIRTHS - 1)
 check(Economy.upgradeCost("Rebirth", 2) == 640e9, "rebirth 3 costs 640B")
 
--- 6. Wash times match the bold diagonal of table 4.6, and income formula (3.7)
-local washDiagonal = { 7.1, 5.9, 5.0, 4.3, 3.8 }
-for i, secs in washDiagonal do
-    check(near(Economy.washTimeEstimate(i, i), secs, 0.06), "wash time zone " .. i)
+-- 6. Wash times (catchiness pass, playtest Q2): Meadow at Lv1 4-8 s, Marsh at Lv1 at most about 10 s, the
+-- matching nozzle of every later zone at the sweep floor; and the income formula (3.7)
+check(near(Economy.washTimeEstimate(1, 1), 4.76, 0.05), "Meadow egg at Lv1 about 4.8 s")
+check(near(Economy.washTimeEstimate(2, 1), 9.52, 0.05), "Marsh egg at Lv1 about 9.5 s")
+for i = 2, 5 do
+    check(Economy.washTimeEstimate(i, i) == Economy.WASH_SWEEP_FLOOR, "matching nozzle washes zone " .. i .. " fast")
+    check(Economy.washTimeEstimate(i, i - 1) > 6, "one nozzle level short is slow in zone " .. i)
 end
-check(near(Economy.washTimeEstimate(2, 1), 21, 0.5), "Marsh egg at Lv1 about 21 s")
 check(
     Economy.incomePerSecond({ { Species = "Moss Turtle" }, { Species = "Bog Frog", Mutation = "Shiny" } }, 0) == 53,
     "income sums species x mutation"

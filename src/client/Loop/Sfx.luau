@@ -17,6 +17,7 @@ Sfx.ids = {
     hiss = "rbxassetid://9126200774", -- Water Spray Hose (ProSoundEffects), looped
     splat = "rbxassetid://12222152", -- splat.wav (Roblox)
     chime = "rbxassetid://4612374036", -- bling_big_diamond_pickup (wash done)
+    squeak = "rbxassetid://9114617189", -- Glass Squeak 2 (ProSoundEffects): squeaky clean
     crack = "rbxassetid://9113959343", -- Crack Egg Crunchy 11 (ProSoundEffects)
     tick = "rbxasset://sounds/clickfast.wav", -- built into the client
     bonk = "rbxasset://sounds/button.wav", -- built into the client

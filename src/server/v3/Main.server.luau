@@ -7,6 +7,7 @@ local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local ServerStorage = game:GetService("ServerStorage")
 local Workspace = game:GetService("Workspace")
 
 local Economy = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Economy"))
@@ -170,18 +171,32 @@ local function onPlayerAdded(player: Player)
     end
     player:SetAttribute("PlotId", plotOf[player])
 
-    local data, status = SaveStore.load(player.UserId, function()
-        return player.Parent ~= nil
-    end)
+    for _, plot in CollectionService:GetTagged("FLPlot") do
+        if plot:GetAttribute("PlotId") == plotOf[player] then
+            player.RespawnLocation = plot:FindFirstChild("Spawn") :: SpawnLocation?
+        end
+    end
+
+    -- Studio playtests of the new-player flow: set ServerStorage attribute FLFreshSaveInStudio = true
+    local fresh = RunService:IsStudio() and ServerStorage:GetAttribute("FLFreshSaveInStudio") == true
+    local data, status
+    if fresh then
+        warn("[V3] FLFreshSaveInStudio: fresh unsaved profile")
+        data, status = SaveSchema.new(), "fresh"
+    else
+        data, status = SaveStore.load(player.UserId, function()
+            return player.Parent ~= nil
+        end)
+    end
     if not player.Parent then
-        if data then
+        if data and not fresh then
             SaveStore.releaseLock(player.UserId)
         end
         plotOf[player] = nil
         return
     end
     if data then
-        canSave[player] = true
+        canSave[player] = not fresh
     elseif status == "failed" and RunService:IsStudio() then
         warn("[V3] DataStore unavailable in Studio: playing with a fresh save that will NOT be saved")
         data = SaveSchema.new()

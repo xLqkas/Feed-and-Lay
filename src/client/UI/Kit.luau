@@ -65,6 +65,9 @@ local function stroke(object: GuiObject, color: Color3, thickness: number, borde
     return s
 end
 
+Kit.corner = corner
+Kit.stroke = stroke
+
 local PILL = UDim.new(0.5, 0)
 local BUTTON_RADIUS = UDim.new(0, Theme.Radius.button)
 
@@ -162,14 +165,21 @@ function Kit.screen(name: string, displayOrder: number?): Screen
     }
 
     local function apply()
-        local size = gui.AbsoluteSize
+        -- Debug: player attribute FLDebugViewport (Vector2) lays the screen out at that size, centred and
+        -- clipped, so phone screenshots can be taken in a PC window (docs/ai/client-v3-notes.md).
+        local debugSize = Players.LocalPlayer:GetAttribute("FLDebugViewport")
+        local emulated = typeof(debugSize) == "Vector2"
+        local size = if emulated then debugSize else gui.AbsoluteSize
         if size.X <= 0 or size.Y <= 0 then
             return
         end
         local info = Logic.layoutFor(size.X, size.Y)
         screen.info = info
         scale.Scale = info.scale
-        root.Size = UDim2.fromScale(1 / info.scale, 1 / info.scale)
+        root.Size = if emulated
+            then UDim2.fromOffset(size.X / info.scale, size.Y / info.scale)
+            else UDim2.fromScale(1 / info.scale, 1 / info.scale)
+        root.ClipsDescendants = emulated
         -- Phone banner sits higher than the spec's 0.12 so it clears the top-left Coins counter.
         local bannerY = if info.compact then 0.05 else 0.10
         if screen.banner then
@@ -189,6 +199,7 @@ function Kit.screen(name: string, displayOrder: number?): Screen
         fit(d, screen.info)
     end)
     gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(apply)
+    Players.LocalPlayer:GetAttributeChangedSignal("FLDebugViewport"):Connect(apply)
     gui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
     apply()
     return screen

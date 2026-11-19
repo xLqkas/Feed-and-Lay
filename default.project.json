@@ -26,17 +26,29 @@
       "StarterPlayerScripts": {
         "$ignoreUnknownInstances": true,
         "EggSanctuaryClient": {
-          "$path": "src/client/EggSanctuaryClient.client.luau"
+          "$path": "src/client/EggSanctuaryClient.client.luau",
+          "$properties": {
+            "Disabled": true
+          }
         },
         "PetShowcaseAnimator": {
-          "$path": "src/client/PetShowcaseAnimator.client.luau"
+          "$path": "src/client/PetShowcaseAnimator.client.luau",
+          "$properties": {
+            "Disabled": true
+          }
         },
         "EggRestoration3D": {
-          "$path": "src/client/EggRestoration3D.client.luau"
+          "$path": "src/client/EggRestoration3D.client.luau",
+          "$properties": {
+            "Disabled": true
+          }
         },
         "UI": {
           "$path": "src/client/UI",
           "$ignoreUnknownInstances": true
+        },
+        "Loop": {
+          "$path": "src/client/Loop"
         }
       }
     },

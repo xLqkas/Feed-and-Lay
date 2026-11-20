@@ -42,13 +42,13 @@ function Goals.upgrades(s: State): { Upgrade }
             table.insert(list, { track = track, name = name, cost = cost, sign = sign })
         end
     end
-    add("Nest", s.nestSlots, "Inventory slot " .. (s.nestSlots + 1), "Sign_Nest")
+    add("Nest", s.nestSlots, "Inventory slot " .. (s.nestSlots + 1), "")
     local food = Economy.Foods[s.foodTier + 1]
-    add("Food", s.foodTier, food and food.Name, "Sign_Food")
+    add("Food", s.foodTier, food and food.Name, "FoodShop")
     local nozzle = Economy.Nozzles[s.nozzleLevel + 1]
-    add("Nozzle", s.nozzleLevel, nozzle and nozzle.Name, "Sign_Nozzle")
+    add("Nozzle", s.nozzleLevel, nozzle and nozzle.Name, "Washer")
     local bell = Economy.Dumbbells[s.dumbbellTier + 1]
-    add("Dumbbell", s.dumbbellTier, bell and bell.Name, "Sign_Weights")
+    add("Dumbbell", s.dumbbellTier, bell and bell.Name, "LiftBench")
     table.sort(list, function(a, b)
         return a.cost < b.cost
     end)

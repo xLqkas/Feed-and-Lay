@@ -207,7 +207,7 @@ GameConfig.EggCrusts = {
         ParticleColor = Color3.fromRGB(55, 48, 48),
         ChunkHP = 120,
         EggCoreColor = Color3.fromRGB(30, 24, 28),
-        EggCoreMaterial = Enum.Material.Neon, -- Glowing lava cracks!
+        EggCoreMaterial = Enum.Material.Neon,
         PatternName = "Magma Vein",
     },
     [4] = { -- Sunken Coral Reef
@@ -287,6 +287,43 @@ function GameConfig.GetNextZoneMilestone(strength)
         RepsNeeded = 0,
         IsMax = true,
     }
+end
+
+-----------------------------------------------------
+-- EGG GROWTH & WEIGHT BALANCING (Phase 0 Decision 2)
+-----------------------------------------------------
+GameConfig.EggGrowthTimes = {
+    Common = 30,       -- 30s
+    Uncommon = 60,     -- 1 min
+    Rare = 120,        -- 2 min
+    Epic = 300,        -- 5 min
+    Legendary = 900,   -- 15 min
+    Mythic = 1800,     -- 30 min
+}
+
+GameConfig.EggWeights = {
+    Common = { Base = 1.0, Min = 0.8, Max = 1.6 },
+    Uncommon = { Base = 2.0, Min = 1.5, Max = 3.0 },
+    Rare = { Base = 4.0, Min = 2.8, Max = 6.0 },
+    Epic = { Base = 10.0, Min = 7.5, Max = 15.0 },
+    Legendary = { Base = 25.0, Min = 18.0, Max = 38.0 },
+    Mythic = { Base = 75.0, Min = 50.0, Max = 120.0 },
+}
+
+function GameConfig.GetEggGrowthDuration(rarity)
+    return GameConfig.EggGrowthTimes[rarity] or 30
+end
+
+function GameConfig.GetPetScaleFromWeight(weight, rarity)
+    local cfg = GameConfig.EggWeights[rarity] or GameConfig.EggWeights.Common
+    local ratio = (weight or cfg.Base) / cfg.Base
+    return math.clamp(0.85 + (ratio - 1) * 0.35, 0.75, 1.60)
+end
+
+function GameConfig.GetWeightIncomeMultiplier(weight, rarity)
+    local cfg = GameConfig.EggWeights[rarity] or GameConfig.EggWeights.Common
+    local ratio = (weight or cfg.Base) / cfg.Base
+    return math.clamp(1.0 + (ratio - 1) * 0.15, 0.90, 1.35)
 end
 
 return GameConfig

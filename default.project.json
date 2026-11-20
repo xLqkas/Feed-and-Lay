@@ -5,29 +5,22 @@
     "ServerScriptService": {
       "EggSanctuaryServer": {
         "$className": "Folder",
-        "MainGameServer": {
-          "$path": "src/server/MainGameServer.server.luau"
-        }
-      }
-    },
-    "StarterPlayer": {
-      "StarterPlayerScripts": {
-        "EggSanctuaryClient": {
-          "$path": "src/client/EggSanctuaryClient.client.luau"
-        },
-        "PetShowcaseAnimator": {
-          "$path": "src/client/PetShowcaseAnimator.client.luau"
-        },
-        "EggRestoration3D": {
-          "$path": "src/client/EggRestoration3D.client.luau"
+        "V3": {
+          "$path": "src/server/V3"
         }
       }
     },
     "ReplicatedStorage": {
       "Modules": {
         "$className": "Folder",
+        "Economy": {
+          "$path": "src/shared/Economy.luau"
+        },
         "GameConfig": {
           "$path": "src/shared/GameConfig.luau"
+        },
+        "Goals": {
+          "$path": "src/shared/Goals.luau"
         },
         "SoundHelper": {
           "$path": "src/shared/SoundHelper.luau"

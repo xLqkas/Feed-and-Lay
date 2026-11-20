@@ -1,84 +1,108 @@
-# Egg Sanctuary: Feed, Clean & Hatch 🥚✨
+# Egg Sanctuary: Feed and Lay (V3) 🥚✨
 
-A friendly, colorful, satisfying pet sanctuary and collection game on Roblox.
+A satisfying Roblox pet sanctuary and distance launcher game where players train strength, launch luxury food to canyon creatures, power-wash dirty eggs, and hatch passive income-generating companions.
 
-> **Core Loop:** Train strength at the gym $\rightarrow$ Walk onto the marked Launch Station looking down the canyon $\rightarrow$ Charge and release a food toss down the red carpet runway $\rightarrow$ A wild creature catches it and lays an egg $\rightarrow$ Bring the egg to the wash station and brush it clean $\rightarrow$ Place the clean egg in your open wooden garden yard to grow & hatch $\rightarrow$ Pet visibly lives and roams inside your yard, generating passive Bio-Essence ($/s) $\rightarrow$ Upgrade food & repeat!
+> **Core Loop:** Train Strength at the Dumbbell Lift Station $\rightarrow$ Walk to the Canyon Launch Ledge $\rightarrow$ Charge and time your throw on the sweet spot needle meter $\rightarrow$ Wild canyon beast catches food and lays an egg $\rightarrow$ Egg flies back to your Nest $\rightarrow$ Wash the 3D crust off on the rotating turntable basin with your power nozzle $\rightarrow$ Egg hatches into a pet $\rightarrow$ Top pets roam your garden Pen generating coins ($/sec) $\rightarrow$ Upgrade food, weights, nozzles & nest capacity $\rightarrow$ Repeat!
 
 ---
 
-## 🎮 Game Systems & Features
+## 🎮 Game Systems & Mechanics
 
-- **Location-Gated Throw Mechanic:**
-  - Launching is only enabled when the player stands on the glowing **Yellow Launch Pad**.
-  - Stepping off immediately cancels active charges and hides the throw UI.
-  - Server validates distance, state, and cooldown to prevent invalid throws anywhere on the map.
-- **6-Segment Power Meter:**
-  - Stacked segmented charge meter inspired by top launch games:
-    - Segment 1: Tap (`x0.5`)
-    - Segment 2: Speed (`x0.7`)
-    - Segment 3: Speed (`x0.85`)
-    - Segment 4: Full (`x1.0`)
-    - Segment 5: **Golden Sweet Spot (`<| x1.25 SWEET SPOT! 🔥`)**
-    - Segment 6: Overcharge (`x0.9`)
-- **Tactile Egg Washing Station:**
-  - Dirty eggs return from the canyon with 4 dirt patches.
-  - Players brush dirt patches clean (25% per brush) before hatching.
-- **Open Fenced Pet Gardens (No Nests):**
-  - Spacious 46x46 split-rail wooden fenced yards.
-  - Pets live and roam directly on the grass floor.
-  - Every new player receives 1 attractive 3D starter pet (**Meadow Bunny**).
-- **Passive Income & Base Expansion:**
-  - Placed pets generate passive Bio-Essence every 2 seconds.
-  - Base signs display real-time earnings (e.g. `XLQKAS'S BASE (+6 $/s)`).
-  - Accumulated Bio-Essence unlocks higher food tiers at the Chef Stall for higher luck and shiny chances.
-- **Gym Training:**
-  - Treadmill workouts permanently increase throw distance reach (+10 studs per workout).
-- **DataStore Persistence:**
-  - Robust auto-saving for Strength, Bio-Essence, Food Tiers, and placed Garden Pets with session fallback.
+### 1. Dumbbell Lift Station (Strength = Distance)
+* Stand at the bicep curl station on your plot to train strength.
+* Interactive rhythm ring mini-game (`LiftRules.luau`): tap within the timing window to earn strength. Fixed-interval autoclickers are countered by server-side ring timing.
+* Strength determines maximum throw distance, unlocking deeper canyon biomes (Dewdrop Meadow $\rightarrow$ Toxic Slime Marsh $\rightarrow$ Cinder Volcano $\rightarrow$ Sunken Coral Reef $\rightarrow$ Celestial Galaxy).
+
+### 2. Canyon Ledge Launch & Sweet Spot Meter
+* Gated by proximity to the Canyon Launch Ledge. Stepping away cancels the active charge.
+* Timed needle charge meter (`EggRules.needle`):
+  * **Tap:** `x0.50`
+  * **Speed:** `x0.70` – `x0.85`
+  * **Full:** `x1.00`
+  * **Sweet Spot:** `x1.25` multiplier on throw reach
+  * **Overcharge:** drops to `x0.90`
+* Canyon beasts catch the food and drop an egg whose species is determined by the landing zone and whose rarity/mutation is boosted by equipped food tier.
+
+### 3. Food Tiers (Food = Luck & Mutations)
+* Higher food tiers purchased from the economy multiply rarity rolls and shiny/golden/rainbow mutation probabilities.
+* Food tiers range from Red Apple (T1, 1.0x luck) up to Cosmic Ambrosia (T8, 100.0x luck).
+* Mutations provide substantial multipliers to creature income:
+  * **Normal:** 1.0x
+  * **Shiny:** 2.5x
+  * **Golden:** 5.0x
+  * **Rainbow:** 10.0x
+
+### 4. Nest & Washing Station
+* Laid eggs fly back from the canyon and enter the player's **Nest** queue.
+* The player takes an egg from the nest to the **EggCleaner** wash basin.
+* Interactive 3D Turntable Washing:
+  * The egg rotates on a turntable while encased in 30 destructible 3D crust chunks (`EggRules.chunkNormal`, `EggRules.spray`).
+  * Spraying water damages and pops chunks off, revealing the pristine shell underneath.
+  * Upgrading the spray nozzle increases damage rate and spray radius.
+
+### 5. Hatching, Garden Pen & Storage
+* Once an egg reaches 100% cleanliness, the hatch reveal completes.
+* **Pen Capacity:** The garden pen holds the player's top-earning pets (up to `penSlots`).
+* **Passive Income:** Placed pen pets generate coins every second based on species base yield and mutation multipliers.
+* **Storage:** Extra pets beyond the pen slot limit are kept in collection storage.
+
+### 6. Robust Save & Session Locking (v7)
+* Plain DataStore persistence with active session locking (`SaveStore.luau`, `SaveSchema.luau`).
+* Prevents data wiping, pet duplication, and concurrent multi-server overwrites via lease locks.
+* Automatic backward-compatibility migration converts old v5 and v6 saves on join.
+
+*(Note: In-game growth timers for eggs on plot ground and the central Hub marketplace are tracked as future milestones in `docs/phase0_decisions.md` [unverified in live place]).*
 
 ---
 
 ## 📁 Repository Structure
 
 ```
-EggSanctuary/
-├── default.project.json          # Rojo project configuration
-├── 3D_ARTIST_GUIDE.md            # Comprehensive art bible & technical specs for 3D modelers
-├── Egg_Sanctuary_GDD.md          # Full Game Design Document
-├── Egg_Sanctuary_Clean_and_Hatch_GDD.pdf # Visual GDD PDF
+Feed and Lay/
+├── default.project.json          # Rojo 7 project configuration
+├── README.md                     # V3 project documentation
+├── 3D_ARTIST_GUIDE.md            # Art bible & technical specifications
+├── docs/
+│   ├── ARCHITECTURE.md           # Module list, remotes & save system details
+│   ├── phase0_decisions.md       # Production roadmap and design decisions
+│   ├── ui_style_spec.md          # Chunky Nest UI design tokens
+│   └── tasks/                    # Agent task specifications
+├── legacy/                       # Preserved V1 scripts (unmapped)
+│   ├── server/
+│   │   └── MainGameServer.server.luau
+│   └── client/
+│       ├── EggRestoration3D.client.luau
+│       ├── EggSanctuaryClient.client.luau
+│       └── PetShowcaseAnimator.client.luau
 ├── src/
 │   ├── server/
-│   │   └── MainGameServer.server.luau   # Server engine (DataStores, Plots, Throws, Hatching)
-│   ├── client/
-│   │   └── EggSanctuaryClient.client.luau # Client HUD, 6-Segment Meter, Camera, Wash UI
-│   └── shared/
-│       ├── GameConfig.luau              # Biome zones, food luck tiers, mutations
-│       └── SoundHelper.luau             # Dynamic audio manager with procedural fallback
-└── .gitignore
+│   │   └── V3/                   # Authoritative V3 game engine
+│   │       ├── Main.server.luau  # Server lifecycle, remotes & autosave
+│   │       ├── SaveStore.luau    # DataStore wrapper with session locking
+│   │       ├── SaveSchema.luau   # Pure v7 schema, migration & validation
+│   │       ├── EggService.luau   # Remote dispatcher & action routing
+│   │       ├── EggRules.luau     # Pure rules for throws, washing & hatching
+│   │       ├── LiftRules.luau    # Pure dumbbell workout rhythm mechanics
+│   │       └── Onboarding.luau   # Pure tutorial step evaluator
+│   └── shared/                   # Shared pure modules
+│       ├── Economy.luau          # Biomes, food, upgrade tracks & drop math
+│       ├── Goals.luau            # HUD goal evaluators
+│       ├── GameConfig.luau       # Shared configuration constants
+│       └── SoundHelper.luau      # Positional sound helper
+└── tests/
+    ├── test_game_math.luau       # Economy & throw ratio unit tests
+    └── test_v3_saves_and_rules.luau # SaveSchema v5/v6/v7 migration & EggRules tests
 ```
 
 ---
 
-## 🎨 For 3D Artists & Modelers
+## 🚀 Rojo Synchronization
 
-Please read [3D_ARTIST_GUIDE.md](./3D_ARTIST_GUIDE.md) before creating models. It covers:
-- Polycount budgets (< 4,000 tris per pet).
-- Scale, pivot point standards, and bone hierarchy.
-- The 5 biome creature concepts (`Meadow Bunny`, `Slime Drake`, `Ember Hound`, `Coral Leviathan`, `Galaxy Titan`).
-- Modular environment props (split-rail fence, treadmill, wash basin, chef market stall, canyon cliffs).
+To sync repo files into Roblox Studio using Rojo:
 
----
-
-## 🚀 How to Sync with Roblox Studio (Rojo)
-
-1. Install [Rojo](https://rojo.space/docs/v7/getting-started/installation/) (or the Rojo VS Code extension / Studio plugin).
-2. Clone this repository:
-   ```bash
-   git clone <REPO_URL>
-   cd EggSanctuary
-   ```
-3. Start the Rojo server:
+1. Install [Rojo](https://rojo.space/docs/v7/getting-started/installation/).
+2. Run the Rojo server from the repository root:
    ```bash
    rojo serve
    ```
-4. Open the place in **Roblox Studio** and click **Connect** in the Rojo plugin tab.
+3. Open the `Feed and Lay` place in **Roblox Studio** and click **Connect** in the Rojo plugin tab.

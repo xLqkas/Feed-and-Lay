@@ -533,15 +533,19 @@ ThrowFoodRemote.OnServerInvoke = function(player, clientReportedDuration)
     if data.LastThrowTime and (now - data.LastThrowTime) < GameConfig.ThrowCooldown then
         return { Success = false, Message = "Throw is on cooldown! Wait a moment." }
     end
-    data.LastThrowTime = now
-
     -- Calculate true charge duration on server (Issue 5 Fix)
-    local duration = 0.1
-    if data.ChargeStartTime then
-        duration = now - data.ChargeStartTime
-        data.ChargeStartTime = nil
-    else
-        duration = math.clamp(tonumber(clientReportedDuration) or 0.1, 0.05, 3.0)
+    -- No StartCharge is a bad request; the client-reported duration is never trusted on its own.
+    if not data.ChargeStartTime then
+        return { Success = false, Message = "Hold to charge first!" }
+    end
+    local duration = now - data.ChargeStartTime
+    data.ChargeStartTime = nil
+    data.LastThrowTime = now
+    if clientReportedDuration ~= nil then
+        local reported = tonumber(clientReportedDuration)
+        if type(reported) == "number" and reported == reported and math.abs(reported - duration) <= 0.15 then
+            duration = math.clamp(reported, 0.05, 3.0)
+        end
     end
 
     local ratio, isSweetSpot, tierTag = GameConfig.ThrowRatio(duration)

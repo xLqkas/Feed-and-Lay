@@ -1,10 +1,12 @@
 --!strict
--- Pen (design-v3 3.7, VS-8): placeholder pet models on the pen spots, wandering inside their 6 x 6 spot,
--- name + rarity billboard (40 studs), and "+X" floating up over each pen pet once a second (12 nearest).
+-- Pen (design-v3 3.7, VS-8): pet models (Creatures) on the pen spots, wandering inside their 6 x 6 spot with an
+-- idle bob, a hop on every income tick, name + rarity billboard (40 studs), and "+X" floating up over each pen
+-- pet once a second (12 nearest).
 
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
+local Creatures = require(script.Parent.Creatures)
 local Ctx = require(script.Parent.Ctx)
 local Fx = require(script.Parent.Fx)
 local Logic = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("Logic"))
@@ -12,24 +14,6 @@ local Theme = require(script.Parent.Parent:WaitForChild("UI"):WaitForChild("Them
 
 local Pen = {}
 
--- shortcut: primitive placeholder pets coloured per species until the P-9 meshes exist
-local COLORS: { [string]: Color3 } = {
-    ["Meadow Bunny"] = Color3.fromRGB(245, 240, 235),
-    ["Moss Turtle"] = Color3.fromRGB(95, 155, 75),
-    ["Clover Fawn"] = Color3.fromRGB(205, 155, 95),
-    ["Bog Frog"] = Color3.fromRGB(115, 175, 60),
-    ["Slime Drake"] = Color3.fromRGB(120, 225, 95),
-    ["Lily Croc"] = Color3.fromRGB(60, 125, 85),
-    ["Ember Hound"] = Color3.fromRGB(225, 95, 45),
-    ["Magma Newt"] = Color3.fromRGB(245, 125, 45),
-    ["Ash Phoenix"] = Color3.fromRGB(255, 175, 55),
-    ["Bubble Seal"] = Color3.fromRGB(155, 205, 235),
-    ["Coral Leviathan"] = Color3.fromRGB(240, 115, 135),
-    ["Pearl Whale"] = Color3.fromRGB(225, 232, 255),
-    ["Comet Fox"] = Color3.fromRGB(255, 220, 125),
-    ["Nebula Kirin"] = Color3.fromRGB(175, 115, 240),
-    ["Galaxy Titan"] = Color3.fromRGB(70, 45, 130),
-}
 local WALK_SPEED = 4
 local SPOT_HALF = 2.5 -- wander inside the 6 x 6 spot, keeping clear of its edge
 local MAX_FLOATERS = 12
@@ -46,6 +30,7 @@ type Entry = {
     income: number,
     rainbow: boolean,
     hopping: boolean,
+    hopAt: number,
 }
 local entries: { [number]: Entry } = {}
 
@@ -53,47 +38,19 @@ local function rarityIndex(rarity: string): number
     return table.find(Theme.RarityOrder, rarity) or 1
 end
 
--- Builds a pet model (PrimaryPart Body, pivot at the body centre). Used by the reveal too.
+-- Builds a pet model (PrimaryPart Body, pivot at the body centre, attribute FootDrop). Used by the reveal too.
 function Pen.makePet(species: string, mutation: string, rarity: string): Model
-    local model = Instance.new("Model")
-    model.Name = species
     local radius = 0.8 + 0.12 * rarityIndex(rarity)
-    local color = COLORS[species] or Color3.new(1, 1, 1)
-    if mutation == "Shiny" then
-        color = color:Lerp(Color3.fromRGB(150, 220, 255), 0.45)
-    elseif mutation == "Golden" then
-        color = Color3.fromRGB(255, 200, 40)
-    end
-    local body = Fx.part("Body", Vector3.one * radius * 2, color, Enum.PartType.Ball)
-    if mutation == "Golden" then
-        body.Material = Enum.Material.Metal
-    end
-    body.CFrame = CFrame.new()
-    body.Parent = model
-    model.PrimaryPart = body
-    local head = Fx.part("Head", Vector3.one * radius * 1.2, color, Enum.PartType.Ball)
-    head.CFrame = CFrame.new(0, radius * 0.8, -radius * 0.7)
-    head.Parent = model
-    for _, x in { -1, 1 } do
-        local eye = Fx.part("Eye", Vector3.one * radius * 0.28, Color3.fromRGB(25, 20, 30), Enum.PartType.Ball)
-        eye.CFrame = CFrame.new(x * radius * 0.25, radius * 0.95, -radius * 1.2)
-        eye.Parent = model
-        local ear =
-            Fx.part("Ear", Vector3.new(radius * 0.3, radius * 0.7, radius * 0.2), color:Lerp(Color3.new(0, 0, 0), 0.15))
-        ear.CFrame = CFrame.new(x * radius * 0.4, radius * 1.5, -radius * 0.6)
-        ear.Parent = model
-    end
-    if mutation == "Shiny" or mutation == "Rainbow" then
-        local sparkles = Instance.new("Sparkles")
-        sparkles.SparkleColor = Color3.fromRGB(170, 230, 255)
-        sparkles.Parent = body
-    end
+    local model = Creatures.build(species, radius, mutation, rarity)
+    local body = model.PrimaryPart :: BasePart
+    model:SetAttribute("FootDrop", Creatures.footDrop(species, radius))
+    local _, extents = model:GetBoundingBox()
 
     local gui = Instance.new("BillboardGui")
     gui.Name = "Tag"
-    gui.Size = UDim2.fromOffset(160, 44)
-    gui.StudsOffset = Vector3.new(0, radius * 2 + 0.8, 0)
-    gui.MaxDistance = 40
+    gui.Size = UDim2.fromOffset(130, 36) -- small and short-range so a full pen does not bury the HUD (m5)
+    gui.StudsOffset = Vector3.new(0, extents.Y / 2 + 0.8, 0)
+    gui.MaxDistance = 28
     gui.LightInfluence = 0
     gui.Parent = body
     local name = Instance.new("TextLabel")
@@ -174,7 +131,7 @@ function Pen.add(pet: Ctx.Pet, model: Model?)
     end
     local m = model or Pen.makePet(pet.species, pet.mutation, pet.rarity)
     local body = m.PrimaryPart :: BasePart
-    local radius = body.Size.Y / 2
+    local radius = (m:GetAttribute("FootDrop") :: number?) or body.Size.Y / 2
     local home = spotPoint(spot) + Vector3.new(0, radius, 0)
     local entry: Entry = {
         model = m,
@@ -187,6 +144,7 @@ function Pen.add(pet: Ctx.Pet, model: Model?)
         income = pet.income,
         rainbow = pet.mutation == "Rainbow",
         hopping = model ~= nil,
+        hopAt = -math.huge,
     }
     entries[pet.id] = entry
     if model then
@@ -251,7 +209,11 @@ RunService.Heartbeat:Connect(function(dt)
             e.pos += delta.Unit * step
             facing = CFrame.lookAt(Vector3.zero, delta * Vector3.new(1, 0, 1)).Rotation
         end
-        local bob = math.abs(math.sin(now * (if step > 0.01 then 10 else 3))) * (if step > 0.01 then 0.35 else 0.1)
+        local bob = math.abs(math.sin(now * (if step > 0.01 then 10 else 3))) * (if step > 0.01 then 0.35 else 0.15)
+        local t = (now - e.hopAt) / 0.35 -- income hop: a quick 0.6-stud jump with a squash-free arc
+        if t < 1 then
+            bob += math.sin(t * math.pi) * 0.6
+        end
         e.model:PivotTo(CFrame.new(e.pos + Vector3.new(0, bob, 0)) * facing)
         if e.rainbow then
             e.body.Color = Color3.fromHSV((now * 0.25) % 1, 0.6, 1)
@@ -275,6 +237,7 @@ task.spawn(function()
             local e = list[i]
             task.delay((i - 1) * 0.08, function()
                 if e.model.Parent then
+                    e.hopAt = os.clock()
                     Fx.floatText(
                         e.pos + Vector3.new(0, e.body.Size.Y, 0),
                         "+" .. Logic.formatNumber(e.income),
